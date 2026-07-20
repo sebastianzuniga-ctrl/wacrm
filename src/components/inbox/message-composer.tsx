@@ -112,6 +112,9 @@ interface MediaDraft {
 interface MessageComposerProps {
   conversationId: string;
   sessionExpired: boolean;
+  /** True when an 'agent'-role caller must claim this AI handoff
+   *  ("Tomar contacto") before they're allowed to write here. */
+  claimRequired?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -134,6 +137,7 @@ const OPUS_ENCODER_PATH = "/opus/encoderWorker.min.js";
 export function MessageComposer({
   conversationId,
   sessionExpired,
+  claimRequired = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -189,8 +193,9 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
-  // Media (like free-form text) is only allowed inside the 24h window.
-  const inputsDisabled = readOnly || sessionExpired;
+  // Media (like free-form text) is only allowed inside the 24h window,
+  // and (for agents) only once the handoff has been claimed.
+  const inputsDisabled = readOnly || sessionExpired || claimRequired;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -222,7 +227,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (!trimmed || sending || sessionExpired || claimRequired) return;
 
     setSending(true);
     try {
@@ -234,7 +239,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, claimRequired, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -562,6 +567,11 @@ export function MessageComposer({
           </Button>
         </div>
       )}
+      {!sessionExpired && claimRequired && (
+        <div className="mb-2 rounded-lg bg-red-500/10 px-3 py-2">
+          <p className="text-xs text-red-400">{t("claimRequiredHint")}</p>
+        </div>
+      )}
 
       {/* Hidden file inputs driven by the attach menu. */}
       <input
@@ -736,9 +746,11 @@ export function MessageComposer({
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                  : claimRequired
+                    ? t("claimRequiredPlaceholder")
+                    : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly}
+            disabled={sessionExpired || readOnly || claimRequired}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
@@ -746,7 +758,7 @@ export function MessageComposer({
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              (sessionExpired || readOnly || claimRequired) && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -754,7 +766,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || sessionExpired || claimRequired || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >

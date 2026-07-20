@@ -29,6 +29,7 @@ import {
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 
 /** Thrown by createBroadcast on a caller-visible failure; route maps it. */
 export class BroadcastError extends Error {
@@ -64,6 +65,7 @@ interface PlannedRecipient {
 
 export interface BroadcastPlan {
   broadcastId: string;
+  accountId: string;
   templateName: string;
   templateLanguage: string;
   phoneNumberId: string;
@@ -236,6 +238,7 @@ export async function createBroadcast(
 
   return {
     broadcastId: broadcast.id,
+    accountId,
     templateName,
     templateLanguage,
     phoneNumberId: config.phone_number_id,
@@ -246,6 +249,24 @@ export async function createBroadcast(
   };
 }
 
+/**
+ * Render a rough preview of the sent template body for the inbox
+ * (best-effort — the inbox just needs something legible to show as
+ * the outbound bubble, not a pixel-perfect copy of what Meta rendered).
+ * Substitutes positional {{1}}, {{2}}… placeholders; falls back to the
+ * template name when there's no local template row to render from.
+ */
+export function renderTemplatePreview(
+  templateRow: MessageTemplate | null,
+  params: string[],
+  templateName: string
+): string {
+  if (!templateRow?.body_text) return `[Template: ${templateName}]`;
+  return templateRow.body_text.replace(
+    /\{\{(\d+)\}\}/g,
+    (match, n) => params[Number(n) - 1] ?? match
+  );
+}
 /**
  * Fan out a {@link BroadcastPlan}: send each recipient's template
  * (phone-variant retry) and stamp its `broadcast_recipients` row.
@@ -303,6 +324,39 @@ export async function deliverBroadcast(
           error_message: null,
         })
         .eq('id', recipient.recipientRowId);
+      // Log the send into the inbox too, so a reply to this broadcast
+      // (e.g. a template button tap) has context on what it's replying
+      // to. Best-effort — the WhatsApp send already succeeded, so a
+      // failure here shouldn't count as a delivery failure.
+      try {
+        const { conversationId } = await resolveConversationByPhone(
+          db,
+          plan.accountId,
+          recipient.phone
+        );
+        const previewText = renderTemplatePreview(
+          plan.templateRow,
+          recipient.params,
+          plan.templateName
+        );
+        await db.from('messages').insert({
+          conversation_id: conversationId,
+          sender_type: 'agent',
+          content_type: 'template',
+          content_text: previewText,
+          media_url: null,
+          template_name: plan.templateName,
+          interactive_payload: null,
+          message_id: sentMessageId,
+          status: 'sent',
+          reply_to_message_id: null,
+        });
+      } catch (err) {
+        console.error(
+          '[broadcast-core] failed to log outbound message to inbox:',
+          err
+        );
+      }
     } else {
       await db
         .from('broadcast_recipients')

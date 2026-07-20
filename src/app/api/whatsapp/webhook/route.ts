@@ -9,6 +9,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { dispatchBroadcastReplyRule } from '@/lib/whatsapp/broadcast-reply-rules'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -46,6 +47,16 @@ interface WhatsAppMessage {
   sticker?: { id: string; mime_type: string }
   location?: { latitude: number; longitude: number; name?: string; address?: string }
   reaction?: { message_id: string; emoji: string }
+  /**
+   * Set when the customer taps a Quick Reply button on a TEMPLATE
+   * message (e.g. a broadcast). Distinct from `interactive` below,
+   * which is for buttons/lists on regular interactive messages —
+   * Meta uses a different `type` ('button' vs 'interactive') for the
+   * two. `text` is the button's visible label; `payload` is whatever
+   * string we configured for that button when creating the template
+   * (falls back to the same text if none was set).
+   */
+  button?: { text: string; payload?: string }
   /**
    * Set when the customer taps a button or list row on an interactive
    * message we sent. `button_reply.id` / `list_reply.id` is whatever id
@@ -445,7 +456,10 @@ async function handleStatusUpdate(status: {
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
-async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
+async function flagBroadcastReplyIfAny(
+  accountId: string,
+  contactId: string
+): Promise<string | null> {
   try {
     // Most recent outbound broadcast in this account that hasn't
     // been replied to yet. Account-scoped so a shared inbox reply
@@ -453,14 +467,14 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
     // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id)')
+      .select('id, status, broadcast_id, broadcasts!inner(account_id, template_name)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
       .in('status', ['sent', 'delivered', 'read'])
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (error || !recs || recs.length === 0) return
+    if (error || !recs || recs.length === 0) return null
 
     const row = recs[0]
     const { error: updErr } = await supabaseAdmin()
@@ -471,8 +485,21 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
     if (updErr) {
       console.error('Error marking broadcast recipient replied:', updErr)
     }
+
+    // `broadcasts!inner(...)` can come back as an object or a
+    // single-item array depending on how supabase-js infers the
+    // relationship — handle both defensively.
+    const broadcastRel = row.broadcasts as
+      | { template_name?: string | null }
+      | { template_name?: string | null }[]
+      | null
+    if (Array.isArray(broadcastRel)) {
+      return broadcastRel[0]?.template_name ?? null
+    }
+    return broadcastRel?.template_name ?? null
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)
+    return null
   }
 }
 
@@ -652,8 +679,10 @@ async function processMessage(
   const contentType = ALLOWED_CONTENT_TYPES.has(message.type)
     ? message.type
     : message.type === 'sticker'
-      ? 'image'   // stickers are images
-      : 'text'    // reaction, unknown → text fallback
+      ? 'image'       // stickers are images
+      : message.type === 'button'
+        ? 'interactive' // template quick-reply tap; carries interactive_reply_id
+        : 'text'        // reaction, unknown → text fallback
 
   // Determine whether this is the contact's very first inbound message
   // BEFORE we insert, so the count is accurate. Covers the case where
@@ -705,7 +734,20 @@ async function processMessage(
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
-  await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+  const repliedBroadcastTemplate = await flagBroadcastReplyIfAny(
+    accountId,
+    contactRecord.id
+  )
+  if (repliedBroadcastTemplate && interactiveReplyId) {
+    await dispatchBroadcastReplyRule({
+      accountId,
+      userId: configOwnerUserId,
+      contactId: contactRecord.id,
+      conversationId: conversation.id,
+      templateName: repliedBroadcastTemplate,
+      replyValue: interactiveReplyId,
+    })
+  }
 
   // ============================================================
   // Flow runner dispatch.
@@ -944,6 +986,19 @@ async function parseMessageContent(
     case 'reaction':
       return { ...empty, contentText: message.reaction?.emoji || null }
 
+    case 'button':
+      // Quick Reply tap on a template (e.g. a broadcast's Yes/No
+      // buttons). contentText shows the tapped label in the inbox;
+      // interactiveReplyId carries the payload so a Flow/automation
+      // can route on it, same as a regular interactive reply.
+      if (message.button?.text) {
+        return {
+          ...empty,
+          contentText: message.button.text,
+          interactiveReplyId: message.button.payload || message.button.text,
+        }
+      }
+      return { ...empty, contentText: '[Button reply]' }
     case 'interactive': {
       // The customer tapped a reply button or a list row on a message
       // we previously sent. Meta delivers `interactive.button_reply` for

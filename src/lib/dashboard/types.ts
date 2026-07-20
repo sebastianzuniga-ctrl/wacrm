@@ -55,6 +55,17 @@ export type ActivityKind =
   | 'automation'
   | 'contact'
 
+export interface HandoffQueueItem {
+  id: string
+  contactName: string | null
+  phone: string
+  /** Last inbound/outbound text shown as a preview — falls back to the
+   *  AI's handoff summary when there's no last_message_text. */
+  preview: string | null
+  /** ISO timestamp — drives the relative "waiting since" label + sort. */
+  waitingSince: string
+}
+
 export interface ActivityItem {
   id: string
   kind: ActivityKind

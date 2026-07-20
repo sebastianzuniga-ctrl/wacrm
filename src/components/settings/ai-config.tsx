@@ -41,11 +41,15 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  ollama: 'Ollama (local)',
+  n8n: 'n8n (webhook)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  ollama: 'not required for local Ollama',
+  n8n: 'https://your-n8n.example.com/webhook/...',
 };
 
 export function AiConfig() {
@@ -135,7 +139,10 @@ export function AiConfig() {
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
-  const keyPayload = () => (keyEdited ? apiKey.trim() : undefined);
+  const keyPayload = () => {
+    if (provider === 'ollama' && !hasStoredKey) return 'ollama-local';
+    return keyEdited ? apiKey.trim() : undefined;
+  };
 
   // undefined = leave unchanged; '' typed = null (clear); text = set.
   const embeddingsKeyPayload = () =>
@@ -180,7 +187,7 @@ export function AiConfig() {
       toast.error(t('missingModel'));
       return;
     }
-    if (!configured && !keyEdited) {
+    if (!configured && !keyEdited && provider !== 'ollama') {
       toast.error(t('missingApiKey'));
       return;
     }
@@ -280,6 +287,12 @@ export function AiConfig() {
                     <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
+                    </SelectItem>
+                    <SelectItem value="ollama">
+                      {PROVIDER_LABEL.ollama}
+                    </SelectItem>
+                    <SelectItem value="n8n">
+                      {PROVIDER_LABEL.n8n}
                     </SelectItem>
                   </SelectContent>
                 </Select>

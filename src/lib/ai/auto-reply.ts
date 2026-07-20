@@ -112,10 +112,26 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
+    // The 'n8n' provider needs the contact's phone number to run its
+    // own business logic (patient lookup, etc.) — fetch it only for
+    // that provider; other adapters never see this extra query.
+    const phone =
+      config.provider === 'n8n'
+        ? ((
+            await db
+              .from('contacts')
+              .select('phone')
+              .eq('id', contactId)
+              .maybeSingle()
+          ).data?.phone ?? undefined)
+        : undefined
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+      conversationId,
+      contactId,
+      phone,
     })
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
@@ -154,6 +170,23 @@ export async function dispatchInboundToAiReply(
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+
+      // If the provider left a customer-facing message alongside the
+      // handoff sentinel (e.g. "I'll connect you with a team member"),
+      // deliver it — otherwise the customer sees nothing at all while
+      // waiting. Skips the reply-cap RPC below on purpose: this is a
+      // one-off courtesy message tied to the handoff itself, not a
+      // normal capped auto-reply.
+      if (handoff && text) {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text,
+          aiGenerated: true,
+        })
+      }
       return
     }
 

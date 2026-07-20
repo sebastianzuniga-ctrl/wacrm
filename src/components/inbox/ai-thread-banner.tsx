@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Hand, Undo2, Loader2 } from "lucide-react";
+import { Sparkles, Hand, Undo2, Loader2, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
+import { useCan } from "@/hooks/use-can";
 
 // ------------------------------------------------------------
 // Account AI status is the same for every conversation, so cache it per
@@ -51,7 +52,7 @@ interface AiThreadBannerProps {
   /** Current assignee; when a human owns the thread the bot won't run,
    *  so the "AI active" banner is suppressed. */
   assignedAgentId?: string | null;
-  /** The acting agent — "Take over" assigns the thread to them. */
+  /** The acting agent — "Take over" / "Claim" assigns the thread to them. */
   currentUserId?: string | null;
   /** Called after a successful toggle so the parent can patch its local
    *  conversation state (the realtime UPDATE also arrives, but this keeps
@@ -63,12 +64,13 @@ interface AiThreadBannerProps {
 }
 
 /**
- * Inbox banner that surfaces + controls the AI auto-reply bot per
- * conversation:
- *   - bot active here → "AI is replying automatically" + [Take over]
- *   - bot paused here → the handoff note (if any) + [Resume AI]
- * Renders nothing when the account has no auto-reply configured, or when
- * the bot is active but a human already owns the thread (nothing to do).
+ * Inbox banner that surfaces + controls conversation ownership:
+ *   - nobody has claimed the thread yet → [Claim conversation], regardless
+ *     of whether AI is even configured (an 'agent' can't write until
+ *     someone owns the thread — see /api/whatsapp/send's server-side gate)
+ *   - claimed + bot active here → "AI is replying automatically" + [Take over]
+ *   - claimed + bot paused here → the handoff note (if any) + [Resume AI]
+ *   - claimed + bot active + no auto-reply configured → nothing to show
  */
 export function AiThreadBanner({
   conversationId,
@@ -80,8 +82,10 @@ export function AiThreadBanner({
 }: AiThreadBannerProps) {
   const t = useTranslations("Inbox.aiBanner");
   const { accountId } = useAuth();
+  const canAct = useCan("send-messages"); // viewers can't claim/take over either
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [claiming, setClaiming] = useState(false);
   // Optimistic local mirror of the pause flag so the banner flips
   // instantly on click; re-seeds whenever the thread (or its server
   // state via realtime) changes.
@@ -134,10 +138,91 @@ export function AiThreadBanner({
     [conversationId, currentUserId, onChange, t],
   );
 
-  // Account has no auto-reply → nothing to show. (Still loading → nothing.)
+  // "Tomar contacto" — claims an unassigned thread (atomic on the
+  // server: fails with 409 if another agent claimed it first) and
+  // greets the customer. Works regardless of AI/paused state — this is
+  // the general "someone must own this thread before writing" claim,
+  // distinct from `toggle(true)` ("Take over"), which specifically
+  // pauses an *active* bot without sending anything.
+  const claim = useCallback(async () => {
+    setClaiming(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/claim`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error ?? t("claimError"));
+        return;
+      }
+      onChange?.({
+        ai_autoreply_disabled: true,
+        assigned_agent_id: currentUserId ?? null,
+      });
+      toast.success(t("claimed"));
+    } catch {
+      toast.error(t("networkError"));
+    } finally {
+      setClaiming(false);
+    }
+  }, [conversationId, currentUserId, onChange, t]);
+
+  // Nobody owns this thread yet — always offer a way to grab it, whether
+  // the bot is actively replying, paused after a handoff, or there's no
+  // AI configured for the account at all. This is the one case that must
+  // render unconditionally: it's the only way an 'agent' caller can
+  // unblock their own composer (see the `claimRequired` gate in
+  // message-thread.tsx / the server-side check in /api/whatsapp/send).
+  if (!assignedAgentId) {
+    // Bot is actively mid-conversation — "Take over" (pause + assign,
+    // no unsolicited greeting; the bot already has context with the
+    // customer, so injecting "Hi, I'm X" here would read as redundant).
+    if (autoReplyOn && !paused) {
+      return (
+        <Banner tone="primary">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+            <span className="truncate font-medium text-foreground">
+              {t("activeText")}
+            </span>
+          </div>
+          {canAct && (
+            <BannerButton onClick={() => toggle(true)} busy={busy} icon={Hand}>
+              {t("takeOver")}
+            </BannerButton>
+          )}
+        </Banner>
+      );
+    }
+    // Paused after a handoff, or no AI configured at all — "Claim"
+    // (assign + greet, since the customer isn't already mid-conversation
+    // with an active bot).
+    return (
+      <Banner tone="muted">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">
+            {paused && handoffSummary ? t("pausedTitle") : t("unclaimedTitle")}
+          </p>
+          {paused && handoffSummary && (
+            <p className="truncate text-muted-foreground" title={handoffSummary}>
+              {handoffSummary}
+            </p>
+          )}
+        </div>
+        {canAct && (
+          <BannerButton onClick={claim} busy={claiming} icon={UserCheck}>
+            {t("claim")}
+          </BannerButton>
+        )}
+      </Banner>
+    );
+  }
+
+  // From here on the thread has an owner — only the AI-status banner
+  // (if any) is left to show.
   if (!autoReplyOn) return null;
 
-  // Paused here (a human took over, or the model handed off).
+  // Paused here (the model handed off, and someone already claimed it).
   if (paused) {
     return (
       <Banner tone="muted">
@@ -149,30 +234,17 @@ export function AiThreadBanner({
             </p>
           )}
         </div>
-        <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
-          {t("resume")}
-        </BannerButton>
+        {canAct && (
+          <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
+            {t("resume")}
+          </BannerButton>
+        )}
       </Banner>
     );
   }
 
   // Active, but a human already owns it → the bot won't fire; no banner.
-  if (assignedAgentId) return null;
-
-  // Active on this thread.
-  return (
-    <Banner tone="primary">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-        <span className="truncate font-medium text-foreground">
-          {t("activeText")}
-        </span>
-      </div>
-      <BannerButton onClick={() => toggle(true)} busy={busy} icon={Hand}>
-        {t("takeOver")}
-      </BannerButton>
-    </Banner>
-  );
+  return null;
 }
 
 function Banner({

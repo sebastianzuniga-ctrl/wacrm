@@ -10,6 +10,11 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Optional conversation context — only the 'n8n' provider uses
+   *  these; other adapters ignore them. */
+  conversationId?: string
+  contactId?: string
+  phone?: string
 }
 
 /**

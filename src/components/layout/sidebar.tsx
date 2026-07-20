@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { useHandoffQueueCount } from "@/hooks/use-handoff-queue-count";
 import {
   Bell,
   Bot,
@@ -16,6 +17,7 @@ import {
   LogOut,
   MessageSquare,
   Radio,
+  Route,
   Settings,
   Shield,
   User,
@@ -96,6 +98,7 @@ const navItems: NavItem[] = [
   { href: "/contacts", labelKey: "contacts", icon: Users },
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
+  { href: "/campaign-rules", labelKey: "campaignRules", icon: Route },
   { href: "/automations", labelKey: "automations", icon: Zap },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
   { href: "/agents", labelKey: "aiAgents", icon: Bot },
@@ -119,6 +122,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
+  const handoffCount = useHandoffQueueCount();
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
   // (the 017 signup trigger seeds it from `full_name`), so showing it
@@ -223,6 +227,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               const showNotificationBadge =
                 item.href === "/notifications" && unreadNotifications > 0;
 
+              // Red — distinct from the purple "unread" indicators above,
+              // signals conversations waiting on a human agent.
+              const showHandoffBadge =
+                item.href === "/dashboard" && handoffCount > 0;
+
               return (
                 <li key={item.href}>
                   <Link
@@ -260,6 +269,14 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                         className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
                       >
                         {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                      </span>
+                    )}
+                    {showHandoffBadge && (
+                      <span
+                        aria-label={`${handoffCount} conversations waiting on a human agent`}
+                        className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+                      >
+                        {handoffCount > 9 ? "9+" : handoffCount}
                       </span>
                     )}
                   </Link>

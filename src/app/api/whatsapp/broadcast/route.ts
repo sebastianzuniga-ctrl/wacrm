@@ -4,6 +4,8 @@ import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
+import { renderTemplatePreview } from '@/lib/whatsapp/broadcast-core'
+import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -15,74 +17,31 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
-
 interface BroadcastResult {
   phone: string
   status: 'sent' | 'failed'
   whatsapp_message_id?: string
   error?: string
 }
-
-/**
- * Two input shapes are accepted:
- *
- *   NEW (preferred — supports per-recipient variable substitution):
- *     {
- *       recipients: Array<{ phone: string; params: string[] }>,
- *       template_name, template_language
- *     }
- *
- *   LEGACY (all phones receive the same params — kept so existing
- *   callers don't break):
- *     {
- *       phone_numbers: string[],
- *       template_params: string[],
- *       template_name, template_language
- *     }
- *
- * Previous implementation only supported the legacy shape, and the
- * sending hook was forced to ship every batch with `templateParams[0]`
- * — meaning every recipient got contact-0's personalization. The new
- * shape is what actually fixes that.
- */
 interface NewRecipient {
   phone: string
-  /** Body variable values, one per {{N}}. Legacy field. */
   params?: string[]
-  /**
-   * Structured per-send values (header text variable, media URL
-   * override, URL/COPY_CODE button values). When set, takes
-   * precedence over `params` for the body too — see
-   * sendTemplateMessage for the merge rules.
-   */
   messageParams?: SendTimeParams
 }
-
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
-
     const {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser()
-
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    // Per-user broadcast budget. Note: this limits how often a user
-    // can *start* a campaign, not how many messages go out inside
-    // one — the fan-out loop below runs without additional gating.
     const limit = checkRateLimit(`broadcast:${user.id}`, RATE_LIMITS.broadcast)
     if (!limit.success) {
       return rateLimitResponse(limit)
     }
-
-    // Resolve the caller's account_id. whatsapp_config + templates
-    // + broadcasts are all account-scoped post-multi-user, so the
-    // old `.eq('user_id', user.id)` filters miss every row created
-    // by a teammate.
     const { data: profile } = await supabase
       .from('profiles')
       .select('account_id')
@@ -95,7 +54,6 @@ export async function POST(request: Request) {
         { status: 403 },
       )
     }
-
     const body = await request.json()
     const {
       recipients: newRecipients,
@@ -104,8 +62,6 @@ export async function POST(request: Request) {
       template_language,
       template_params,
     } = body
-
-    // Normalize to a list of {phone, params} regardless of shape.
     let recipients: NewRecipient[]
     if (Array.isArray(newRecipients) && newRecipients.length > 0) {
       recipients = newRecipients
@@ -126,20 +82,17 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-
     if (!template_name) {
       return NextResponse.json(
         { error: 'template_name is required' },
         { status: 400 }
       )
     }
-
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
       .eq('account_id', accountId)
       .single()
-
     if (configError || !config) {
       return NextResponse.json(
         {
@@ -149,14 +102,7 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
-
     const accessToken = decrypt(config.access_token)
-
-    // Load the template row once so sendTemplateMessage can build
-    // header + button components on each iteration. Loading inside
-    // the loop would N+1 against Supabase for every recipient.
-    // Guard against a malformed local row crashing every send in
-    // the loop with the same opaque TypeError — fail loudly once.
     const { data: rawTemplateRow } = await supabase
       .from('message_templates')
       .select('*')
@@ -174,14 +120,11 @@ export async function POST(request: Request) {
       )
     }
     const templateRow = rawTemplateRow ?? null
-
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
-
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
-
       if (!isValidE164(sanitized)) {
         results.push({
           phone: recipient.phone,
@@ -191,13 +134,9 @@ export async function POST(request: Request) {
         failedCount++
         continue
       }
-
-      // Retry with phone variants on "not in allowed list" so numbers
-      // that differ only in a trunk-prefix 0 still reach recipients.
       const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
-
       for (const variant of variants) {
         try {
           const result = await sendTemplateMessage({
@@ -221,10 +160,8 @@ export async function POST(request: Request) {
             break
           }
           lastError = errorMessage
-          // retry with next variant
         }
       }
-
       if (sentMessageId) {
         results.push({
           phone: recipient.phone,
@@ -232,6 +169,35 @@ export async function POST(request: Request) {
           whatsapp_message_id: sentMessageId,
         })
         sentCount++
+        try {
+          const { conversationId } = await resolveConversationByPhone(
+            supabase,
+            accountId,
+            recipient.phone
+          )
+          const previewText = renderTemplatePreview(
+            templateRow,
+            recipient.params ?? [],
+            template_name
+          )
+          await supabase.from('messages').insert({
+            conversation_id: conversationId,
+            sender_type: 'agent',
+            content_type: 'template',
+            content_text: previewText,
+            media_url: null,
+            template_name: template_name,
+            interactive_payload: null,
+            message_id: sentMessageId,
+            status: 'sent',
+            reply_to_message_id: null,
+          })
+        } catch (err) {
+          console.error(
+            '[whatsapp/broadcast] failed to log outbound message to inbox:',
+            err
+          )
+        }
       } else {
         console.error(
           `Failed to send broadcast to ${recipient.phone}:`,
@@ -245,7 +211,6 @@ export async function POST(request: Request) {
         failedCount++
       }
     }
-
     return NextResponse.json({
       success: true,
       total: recipients.length,

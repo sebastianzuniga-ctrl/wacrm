@@ -8,6 +8,8 @@ import {
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi } from './providers/openai'
 import { generateAnthropic } from './providers/anthropic'
+import { generateOllama } from './providers/ollama'
+import { generateN8n } from './providers/n8n'
 
 export interface GenerateArgs {
   config: AiConfig
@@ -15,6 +17,10 @@ export interface GenerateArgs {
   systemPrompt: string
   /** Recent conversation turns, oldest first. */
   messages: ChatMessage[]
+  /** Optional conversation context, forwarded to the 'n8n' provider. */
+  conversationId?: string
+  contactId?: string
+  phone?: string
 }
 
 /**
@@ -23,7 +29,7 @@ export interface GenerateArgs {
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, messages } = args
+  const { config, systemPrompt, messages, conversationId, contactId, phone } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
@@ -31,6 +37,9 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     systemPrompt,
     messages,
     timeoutMs,
+    conversationId,
+    contactId,
+    phone,
   }
 
   let result: { text: string; usage: AiUsage | null }
@@ -40,6 +49,12 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       break
     case 'anthropic':
       result = await generateAnthropic(providerArgs)
+      break
+    case 'ollama':
+      result = await generateOllama(providerArgs)
+      break
+    case 'n8n':
+      result = await generateN8n(providerArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {

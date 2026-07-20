@@ -10,6 +10,7 @@ import {
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  HandoffQueueItem,
   MetricsBundle,
   PipelineDonutData,
   PipelineStageSlice,
@@ -395,4 +396,49 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   return items
     .sort((a, b) => (a.at > b.at ? -1 : a.at < b.at ? 1 : 0))
     .slice(0, limit)
+}
+
+
+// ------------------------------------------------------------
+// Handoff queue — conversations the AI paused on (`ai_autoreply_disabled`)
+// that are still open/pending, i.e. waiting on a human agent. Ordered
+// oldest-waiting-first, like a support ticket queue.
+// ------------------------------------------------------------
+
+export async function loadHandoffQueue(
+  db: DB,
+  limit = 20,
+): Promise<HandoffQueueItem[]> {
+  const { data, error } = await db
+    .from('conversations')
+    .select(
+      'id, last_message_text, last_message_at, ai_handoff_summary, updated_at, contacts(name, phone)',
+    )
+    .eq('ai_autoreply_disabled', true)
+    .is('assigned_agent_id', null)
+    .neq('status', 'closed')
+    .order('last_message_at', { ascending: true })
+    .limit(limit)
+
+  if (error || !data) return []
+
+  return (
+    data as unknown as Array<{
+      id: string
+      last_message_text: string | null
+      last_message_at: string | null
+      ai_handoff_summary: string | null
+      updated_at: string
+      contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null
+    }>
+  ).map((row) => {
+    const contact = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
+    return {
+      id: row.id,
+      contactName: contact?.name ?? null,
+      phone: contact?.phone ?? '',
+      preview: row.last_message_text || row.ai_handoff_summary || null,
+      waitingSince: row.last_message_at ?? row.updated_at,
+    }
+  })
 }

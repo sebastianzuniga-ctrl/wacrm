@@ -49,10 +49,11 @@ export async function POST(request: Request) {
     // returned nothing for teammates who didn't author the row.
     const { data: profile } = await supabase
       .from('profiles')
-      .select('account_id')
+      .select('account_id, account_role')
       .eq('user_id', user.id)
       .maybeSingle()
     const accountId = profile?.account_id as string | undefined
+    const accountRole = profile?.account_role as string | undefined
     if (!accountId) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
     if (conversationIdInput) {
       const { data, error: convError } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, assigned_agent_id, ai_autoreply_disabled')
         .eq('id', conversationIdInput)
         .eq('account_id', accountId)
         .single()
@@ -127,6 +128,24 @@ export async function POST(request: Request) {
           { status: 404 }
         )
       }
+
+      // Agents (not admin/owner) must claim ANY unassigned conversation
+      // ("Tomar contacto") before they can write in it — whether the bot
+      // is actively replying, paused after a handoff, or there's no AI
+      // configured at all. Formalizes "someone owns this thread before
+      // responding" so two agents (or the bot and an agent) don't answer
+      // at once without either of them realizing. Only gates the plain
+      // 'agent' role; admin/owner behave as before.
+      if (accountRole === 'agent' && data.assigned_agent_id !== user.id) {
+        return NextResponse.json(
+          {
+            error:
+              'Debes tomar esta conversación (botón "Tomar contacto") antes de responder.',
+          },
+          { status: 403 }
+        )
+      }
+
       conversationId = data.id
     } else {
       // contact_id path: verify the contact is in this account first so a

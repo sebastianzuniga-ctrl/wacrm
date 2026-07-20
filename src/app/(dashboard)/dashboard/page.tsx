@@ -14,6 +14,7 @@ import {
 import {
   loadActivity,
   loadConversationsSeries,
+  loadHandoffQueue,
   loadMetrics,
   loadPipelineDonut,
   loadResponseTime,
@@ -21,6 +22,7 @@ import {
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  HandoffQueueItem,
   MetricsBundle,
   PipelineDonutData,
   ResponseTimeSummary,
@@ -33,6 +35,7 @@ import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
+import { HandoffQueueCard } from '@/components/dashboard/handoff-queue-card'
 
 import { useTranslations } from 'next-intl'
 
@@ -63,6 +66,9 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+
+  const [handoffQueue, setHandoffQueue] = useState<HandoffQueueItem[] | null>(null)
+  const [handoffLoading, setHandoffLoading] = useState(true)
 
   const loadAll = useCallback(() => {
     const db = createClient()
@@ -97,6 +103,11 @@ export default function DashboardPage() {
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
+
+    void loadHandoffQueue(db, 20)
+      .then((h) => setHandoffQueue(h))
+      .catch((err) => console.error('[dashboard] handoff queue failed:', err))
+      .finally(() => setHandoffLoading(false))
   }, [])
 
   useEffect(() => {
@@ -190,6 +201,9 @@ export default function DashboardPage() {
 
       {/* Quick actions */}
       <QuickActions />
+
+      {/* Handoff queue — conversations waiting on a human agent */}
+      <HandoffQueueCard items={handoffQueue} loading={handoffLoading} />
 
       {/* Charts row */}
       {/* items-stretch (the grid default) stretches the two columns to
