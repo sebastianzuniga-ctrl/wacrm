@@ -853,6 +853,49 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  // Audit trail for this ticket -- fetched lazily when the agent
+  // opens the "Actividad" dropdown, not kept live. Declared above the
+  // `!conversation || !contact` early return below so the hook
+  // count/order stays identical across renders regardless of which
+  // branch runs (a version living after the guard triggered React's
+  // "change in the order of Hooks" warning, since it was skipped
+  // entirely on the empty-state render).
+  const [activityEvents, setActivityEvents] = useState<ConversationEventRow[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  useEffect(() => {
+    setActivityEvents(null);
+  }, [conversation?.id]);
+  const loadActivity = useCallback(async () => {
+    if (!conversation) return;
+    setActivityLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/events`);
+      const json = await res.json();
+      setActivityEvents(res.ok ? json.events : []);
+    } catch {
+      setActivityEvents([]);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [conversation?.id]);
+  const statusLabel = (value: string | null) => {
+    const opt = STATUS_OPTIONS.find((o) => o.value === value);
+    return opt ? t(`status${opt.label}`) : value ?? "";
+  };
+  const formatActivityLine = (e: ConversationEventRow) => {
+    const actor = e.actor_name ?? t("activitySystem");
+    if (e.event_type === "status_changed") {
+      return t("activityStatusChanged", {
+        actor,
+        from: statusLabel(e.from_value),
+        to: statusLabel(e.to_value),
+      });
+    }
+    if (e.event_type === "assigned") {
+      return t("activityAssigned", { actor, to: e.to_name ?? t("activityUnknownUser") });
+    }
+    return t("activityUnassigned", { actor, from: e.from_name ?? t("activityUnknownUser") });
+  };
   // Empty state — same WhatsApp-style doodle background as the active
   // thread below, so swapping between empty/selected doesn't change the
   // pattern under the user's eye.
@@ -872,45 +915,6 @@ export function MessageThread({
     );
   }
 
-  // Audit trail for this ticket -- fetched lazily when the agent
-  // opens the "Actividad" dropdown, not kept live. Reset whenever the
-  // open conversation changes so a stale list from the previous
-  // ticket never flashes before the new fetch resolves.
-  const [activityEvents, setActivityEvents] = useState<ConversationEventRow[] | null>(null);
-  const [activityLoading, setActivityLoading] = useState(false);
-  useEffect(() => {
-    setActivityEvents(null);
-  }, [conversation.id]);
-  const loadActivity = useCallback(async () => {
-    setActivityLoading(true);
-    try {
-      const res = await fetch(`/api/conversations/${conversation.id}/events`);
-      const json = await res.json();
-      setActivityEvents(res.ok ? json.events : []);
-    } catch {
-      setActivityEvents([]);
-    } finally {
-      setActivityLoading(false);
-    }
-  }, [conversation.id]);
-  const statusLabel = (value: string | null) => {
-    const opt = STATUS_OPTIONS.find((o) => o.value === value);
-    return opt ? t(`status${opt.label}`) : value ?? "";
-  };
-  const formatActivityLine = (e: ConversationEventRow) => {
-    const actor = e.actor_name ?? t("activitySystem");
-    if (e.event_type === "status_changed") {
-      return t("activityStatusChanged", {
-        actor,
-        from: statusLabel(e.from_value),
-        to: statusLabel(e.to_value),
-      });
-    }
-    if (e.event_type === "assigned") {
-      return t("activityAssigned", { actor, to: e.to_name ?? t("activityUnknownUser") });
-    }
-    return t("activityUnassigned", { actor, from: e.from_name ?? t("activityUnknownUser") });
-  };
   const displayName = contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
