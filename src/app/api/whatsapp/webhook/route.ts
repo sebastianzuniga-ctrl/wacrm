@@ -10,6 +10,8 @@ import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { dispatchBroadcastReplyRule } from '@/lib/whatsapp/broadcast-reply-rules'
+import { isOptOutPhrase, markContactDoNotDisturb } from '@/lib/whatsapp/dnd'
+import { engineSendText } from '@/lib/flows/meta-send'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -731,6 +733,31 @@ async function processMessage(
     console.error('Error updating conversation:', convError)
   }
 
+  // Ley No Molestar / SERNAC: si el contacto escribe la frase explicita de
+  // opt-out (NO basta con presionar el boton "NO" de una plantilla), se
+  // marca do_not_disturb y se corta el flujo aqui -- no sigue a flows,
+  // automatizaciones ni IA. Solo aplica a mensajes de TEXTO libre.
+  if (message.type === 'text' && isOptOutPhrase(contentText)) {
+    await markContactDoNotDisturb(
+      supabaseAdmin(),
+      accountId,
+      contactRecord.id,
+      contentText ?? ''
+    )
+    try {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        text: 'Listo, no volveras a recibir mensajes de nuestras campañas. Si necesitas algo mas, escribenos por este medio.',
+      })
+    } catch (err) {
+      console.error('[webhook] failed to send DND confirmation:', err)
+    }
+    return
+  }
+
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
@@ -1096,12 +1123,34 @@ async function findOrCreateContact(
   return { contact: newContact, wasCreated: true }
 }
 
+// Cuanto tiempo de inactividad (sin mensajes en ningun sentido) antes de
+// considerar una conversacion "vencida": al llegar el siguiente mensaje
+// del contacto se cierra esa y se abre una nueva (nuevo "ticket") -- ver
+// migration 041 y src/app/api/conversations/cron/route.ts (barrido
+// periodico que hace lo mismo aunque el contacto nunca vuelva a escribir).
+const CONVERSATION_IDLE_HOURS = 24
+
+function isConversationStale(conv: {
+  status: string
+  last_message_at: string | null
+  created_at: string
+}): boolean {
+  if (conv.status === 'closed') return true
+  const lastActivity = conv.last_message_at
+    ? new Date(conv.last_message_at).getTime()
+    : new Date(conv.created_at).getTime()
+  const ageHours = (Date.now() - lastActivity) / (1000 * 60 * 60)
+  return ageHours >= CONVERSATION_IDLE_HOURS
+}
+
 async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
 ) {
-  // Look for an existing conversation in this account, oldest-first.
+  // Look for the MOST RECENT conversation in this account for this
+  // contact (not oldest-first anymore -- migration 041 lets a contact
+  // have multiple historical conversations, one per 24h-idle "ticket").
   //
   // We deliberately do NOT use `.single()` here. `.single()` errors on
   // *both* 0 rows and ≥2 rows, and the old code treated any error as
@@ -1110,16 +1159,12 @@ async function findOrCreateConversation(
   // batch fans out to concurrent runs), every subsequent inbound
   // message errored on the lookup and created yet another conversation,
   // snowballing into a wall of duplicate chats (issue #363).
-  //
-  // Ordering oldest-first and taking one row makes the lookup resolve to
-  // the same canonical survivor the dedup migration (036) keeps, so any
-  // pre-existing duplicates converge instead of compounding.
   const { data: existingRows, error: findError } = await supabaseAdmin()
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(1)
 
   if (findError) {
@@ -1127,8 +1172,24 @@ async function findOrCreateConversation(
     return null
   }
 
-  if (existingRows && existingRows.length > 0) {
-    return { conversation: existingRows[0], created: false }
+  const mostRecent = existingRows?.[0] ?? null
+
+  if (mostRecent && !isConversationStale(mostRecent)) {
+    return { conversation: mostRecent, created: false }
+  }
+
+  // Either there's no conversation yet, or the most recent one is stale
+  // (already closed, or 24h+ without activity). Close it out first (if
+  // it wasn't already) so the partial unique index (migration 041,
+  // WHERE status <> 'closed') lets a fresh row take its place.
+  if (mostRecent && mostRecent.status !== 'closed') {
+    const { error: closeError } = await supabaseAdmin()
+      .from('conversations')
+      .update({ status: 'closed' })
+      .eq('id', mostRecent.id)
+    if (closeError) {
+      console.error('Error auto-closing stale conversation:', closeError)
+    }
   }
 
   // Create new conversation. Same tenancy + audit split as
@@ -1144,17 +1205,18 @@ async function findOrCreateConversation(
     .single()
 
   if (createError) {
-    // Lost a race: a concurrent inbound delivery created the
-    // conversation between our lookup and insert, and the unique index
-    // (migration 036) rejected the duplicate. Re-resolve the winning
-    // row instead of dropping the message — mirrors findOrCreateContact.
+    // Lost a race: a concurrent inbound delivery created a (still
+    // non-closed) conversation between our lookup and insert, and the
+    // partial unique index (migration 041) rejected the duplicate.
+    // Re-resolve the winning row instead of dropping the message —
+    // mirrors findOrCreateContact.
     if (isUniqueViolation(createError)) {
       const { data: raced } = await supabaseAdmin()
         .from('conversations')
         .select('*')
         .eq('account_id', accountId)
         .eq('contact_id', contactId)
-        .order('created_at', { ascending: true })
+        .order('created_at', { ascending: false })
         .limit(1)
       if (raced && raced.length > 0) {
         return { conversation: raced[0], created: false }

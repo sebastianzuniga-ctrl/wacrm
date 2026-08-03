@@ -15,6 +15,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -23,6 +24,17 @@ import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+}
+
+type FichaEstado = "activa" | "seleccionando" | "esperando_rut" | "sin_sesion";
+
+interface FichaInfo {
+  estado: FichaEstado;
+  pac_codigo: string | null;
+  pac_nombre: string | null;
+  pac_apellido: string | null;
+  rut: string | null;
+  es_paciente_ino: boolean | null;
 }
 
 export function ContactSidebar({ contact }: ContactSidebarProps) {
@@ -36,6 +48,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [tags, setTags] = useState<(Tag & { contact_tag_id: string })[]>([]);
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
+  const [ficha, setFicha] = useState<FichaInfo | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -79,6 +92,28 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContactData();
   }, [fetchContactData]);
+
+  // Ficha activa del bot de n8n (BotINO) para este telefono -- lectura
+  // best-effort desde /api/ino-ficha; si falla o no hay nada, la
+  // seccion simplemente no se muestra (ver render mas abajo).
+  useEffect(() => {
+    if (!contact?.phone) {
+      setFicha(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/ino-ficha?phone=${encodeURIComponent(contact.phone)}`)
+      .then((res) => res.json())
+      .then((body) => {
+        if (!cancelled) setFicha(body?.ficha ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setFicha(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [contact?.phone]);
 
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
@@ -177,6 +212,45 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+
+          {/* Ficha INO (bot de n8n) -- solo si hay algo que mostrar */}
+          {ficha && (
+            <>
+              <div className="my-4 border-t border-border" />
+              <div>
+                <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  <FileText className="h-3 w-3" />
+                  Ficha INO
+                </div>
+                <div className="mt-2 rounded-lg bg-muted px-3 py-2">
+                  {ficha.estado === "activa" && ficha.pac_codigo ? (
+                    <>
+                      <p className="text-sm font-medium text-foreground">
+                        {[ficha.pac_nombre, ficha.pac_apellido].filter(Boolean).join(" ") ||
+                          "Sin nombre"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Ficha N° {ficha.pac_codigo}
+                      </p>
+                      {ficha.rut && (
+                        <p className="text-xs text-muted-foreground">RUT: {ficha.rut}</p>
+                      )}
+                    </>
+                  ) : ficha.estado === "seleccionando" ? (
+                    <p className="text-xs text-muted-foreground">
+                      El paciente está eligiendo entre varias fichas asociadas a este número.
+                    </p>
+                  ) : ficha.estado === "esperando_rut" ? (
+                    <p className="text-xs text-muted-foreground">
+                      Número no registrado — el bot está esperando que escriba su RUT.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Sin ficha asociada todavía.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />

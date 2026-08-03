@@ -61,9 +61,12 @@
  * THEMING — two orthogonal dimensions
  *
  *   1. MODE   (light / dark)  → neutral surfaces. Selected with
- *      `document.documentElement.dataset.mode`. Defaults to dark.
- *   2. ACCENT (violet / …)    → the primary color only. Selected
- *      with `document.documentElement.dataset.theme`.
+ *      `document.documentElement.dataset.mode`. Defaults to LIGHT
+ *      (white base, per INO branding — clinic runs a white/red/gray
+ *      corporate look, not the previous dark-first default).
+ *   2. ACCENT (ino / violet / …) → the primary color only. Selected
+ *      with `document.documentElement.dataset.theme`. Defaults to
+ *      `ino`, the institutional red.
  *
  * The two compose: any accent works in either mode. Neutral
  * tokens (background / card / border / muted / sidebar surfaces /
@@ -72,9 +75,10 @@
  * --sidebar-ring) live in the ACCENT blocks. They set disjoint
  * variables, so cascade order between them doesn't matter.
  *
- * `:root` carries the dark-mode + violet defaults so a visitor
- * renders correctly before JS runs; the boot script in
- * layout.tsx replays the saved mode + accent before first paint.
+ * `:root` now carries the LIGHT-mode + `ino` (institutional red)
+ * defaults so a visitor renders correctly before JS runs; the boot
+ * script in layout.tsx replays the saved mode + accent (from
+ * localStorage) before first paint, same as before.
  *
  * The three `--primary-*` extras (hover / soft / soft-2) feed
  * hovered primary buttons and tinted-primary surfaces (sidebar
@@ -86,7 +90,6 @@
 
 /* ---- MODE: neutral surfaces ---- */
 
-:root,
 html[data-mode="dark"] {
   --background: oklch(0.13 0.01 260);
   --foreground: oklch(0.985 0 0);
@@ -116,8 +119,9 @@ html[data-mode="dark"] {
   --sidebar-border: oklch(0.28 0.01 260);
 }
 
+:root,
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
+  --background: oklch(1 0 0);
   --foreground: oklch(0.21 0.01 260);
   --card: oklch(1 0 0);
   --card-2: oklch(0.985 0.002 260);
@@ -148,6 +152,24 @@ html[data-mode="light"] {
 /* ---- ACCENT: primary color ---- */
 
 :root,
+html[data-theme="ino"] {
+  /* INO institucional red — sampled from the real logo file (#E62D28).
+   * Adjust this one hex-derived oklch triplet if you have the exact
+   * Pantone/hex from brand guidelines; everything else below derives
+   * from it automatically. */
+  --primary: oklch(0.6 0.22 28);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.637 0.195 25.8);
+  --primary-soft: oklch(0.6 0.22 28 / 0.12);
+  --primary-soft-2: oklch(0.6 0.22 28 / 0.2);
+  --ring: oklch(0.6 0.22 28);
+  --chart-1: oklch(0.6 0.22 28);
+  --chart-2: oklch(0.702 0.005 258.3);
+  --sidebar-primary: oklch(0.6 0.22 28);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.6 0.22 28);
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);

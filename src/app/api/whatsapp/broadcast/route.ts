@@ -6,6 +6,7 @@ import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import { renderTemplatePreview } from '@/lib/whatsapp/broadcast-core'
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
+import { findExistingContact } from '@/lib/contacts/dedupe'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -17,9 +18,19 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+// Throttle entre envios para no mandar en rafaga (buena practica de
+// quality-rating de Meta). El valor real (mensajes/minuto) es
+// configurable por cuenta en Configuracion > WhatsApp
+// (accounts.broadcast_messages_per_minute, migration 039); aqui solo
+// convertimos ese numero a un delay en ms entre destinatarios.
+const DEFAULT_MESSAGES_PER_MINUTE = 60
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
 interface BroadcastResult {
   phone: string
-  status: 'sent' | 'failed'
+  status: 'sent' | 'failed' | 'skipped'
   whatsapp_message_id?: string
   error?: string
 }
@@ -54,6 +65,17 @@ export async function POST(request: Request) {
         { status: 403 },
       )
     }
+    const { data: accountRow } = await supabase
+      .from('accounts')
+      .select('broadcast_messages_per_minute')
+      .eq('id', accountId)
+      .maybeSingle()
+    const messagesPerMinute =
+      accountRow?.broadcast_messages_per_minute ?? DEFAULT_MESSAGES_PER_MINUTE
+    const sendDelayMs = Math.max(
+      0,
+      Math.round(60000 / (messagesPerMinute || DEFAULT_MESSAGES_PER_MINUTE)),
+    )
     const body = await request.json()
     const {
       recipients: newRecipients,
@@ -123,6 +145,7 @@ export async function POST(request: Request) {
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
+    let skippedCount = 0
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
       if (!isValidE164(sanitized)) {
@@ -132,6 +155,18 @@ export async function POST(request: Request) {
           error: 'Invalid phone number format',
         })
         failedCount++
+        continue
+      }
+      // Ley No Molestar / SERNAC: nunca enviar una campaña a un contacto
+      // que ya escribio la frase de opt-out (o fue marcado manualmente).
+      const existingContact = await findExistingContact(supabase, accountId, sanitized)
+      if (existingContact?.do_not_disturb) {
+        results.push({
+          phone: recipient.phone,
+          status: 'skipped',
+          error: 'Contact opted out of campaigns (do not disturb)',
+        })
+        skippedCount++
         continue
       }
       const variants = phoneVariants(sanitized)
@@ -210,12 +245,18 @@ export async function POST(request: Request) {
         })
         failedCount++
       }
+
+      // Pausa entre destinatarios (evita rafagas de envio).
+      if (sendDelayMs > 0) {
+        await sleep(sendDelayMs)
+      }
     }
     return NextResponse.json({
       success: true,
       total: recipients.length,
       sent: sentCount,
       failed: failedCount,
+      skipped: skippedCount,
       results,
     })
   } catch (error) {

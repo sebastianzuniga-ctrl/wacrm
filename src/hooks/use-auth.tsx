@@ -43,6 +43,9 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** Broadcast send pacing cap (messages/minute). NOT NULL DEFAULT 60
+   *  in the DB (migration 039); narrowed to 60 when absent. */
+  broadcast_messages_per_minute: number;
 }
 
 interface AuthContextValue {
@@ -88,6 +91,9 @@ interface AuthContextValue {
    *  while loading or when no account is resolved, so callers can use
    *  it unconditionally. */
   defaultCurrency: string;
+  /** Account broadcast pacing cap (messages/minute). Falls back to 60
+   *  while loading or when no account is resolved. */
+  broadcastMessagesPerMinute: number;
   /** True if `accountRole === 'owner'`. */
   isOwner: boolean;
   /** True if `accountRole === 'admin'` (does NOT include owner — use canManageMembers for "admin or above"). */
@@ -169,9 +175,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (data.account_id) {
           const { data: account, error: accountErr } = await supabase
             .from("accounts")
-            // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            // default_currency added in migration 021; broadcast_messages_per_minute
+            // added in migration 039; both narrowed to fallbacks below for
+            // older schemas where they read null.
+            .select("id, name, default_currency, broadcast_messages_per_minute")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -186,6 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              broadcast_messages_per_minute:
+                account.broadcast_messages_per_minute ?? 60,
             };
           }
         }
@@ -344,6 +353,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         refreshProfile,
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
+        broadcastMessagesPerMinute: account?.broadcast_messages_per_minute ?? 60,
         ...derived,
       }}
     >
@@ -374,6 +384,7 @@ export function useAuth(): AuthContextValue {
       refreshProfile: async () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,
+      broadcastMessagesPerMinute: 60,
       accountId: null,
       accountRole: null,
       isOwner: false,

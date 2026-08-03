@@ -23,6 +23,8 @@
     "pipelines": "Pipelines",
     "broadcasts": "Broadcasts",
     "campaignRules": "Campaign Rules",
+    "noMolestar": "Do Not Disturb",
+    "historial": "History & Stats",
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
@@ -137,6 +139,7 @@
       "filterOpen": "Open",
       "filterPending": "Pending",
       "filterClosed": "Closed",
+      "filterAssignedToMe": "Assigned to me",
       "tags": "Tags",
       "company": "Company",
       "allCompanies": "All companies",
@@ -1490,6 +1493,17 @@
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
       "metaDocs": "Meta WhatsApp API Documentation"
+    },
+    "broadcastPacing": {
+      "title": "Broadcast pacing",
+      "description": "Cap how fast campaign messages go out. Lower it to stay well under Meta's throughput limits and avoid bursts that can hurt your number's quality rating.",
+      "fieldLabel": "Messages per minute",
+      "rangeHint": "Enter a whole number between {min} and {max}.",
+      "adminOnlyHint": "Only account admins can change this.",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Failed to save pacing setting",
+      "saveSuccess": "Pacing setting updated"
     },
     "sections": {
       "overview": "Overview",

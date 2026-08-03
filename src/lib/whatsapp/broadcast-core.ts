@@ -187,6 +187,31 @@ export async function createBroadcast(
     );
   }
 
+  // Ley No Molestar / SERNAC: nunca enviar una campaña a un contacto
+  // marcado do_not_disturb=true. Se cuentan junto a `rejected` (no se
+  // les envia, igual que un telefono invalido) en vez de abortar todo
+  // el broadcast.
+  const { data: dndRows, error: dndErr } = await db
+    .from('contacts')
+    .select('id, do_not_disturb')
+    .in('id', deduped.map((r) => r.contactId));
+  if (dndErr) {
+    console.error('[broadcast-core] failed to check do_not_disturb flags:', dndErr);
+    throw new BroadcastError('internal', 'Failed to validate recipients', 500);
+  }
+  const dndContactIds = new Set(
+    (dndRows ?? []).filter((c) => c.do_not_disturb).map((c) => c.id as string)
+  );
+  const filtered = deduped.filter((r) => !dndContactIds.has(r.contactId));
+  rejected += deduped.length - filtered.length;
+  if (filtered.length === 0) {
+    throw new BroadcastError(
+      'bad_request',
+      'All recipients are marked do_not_disturb (opted out of campaigns)',
+      400
+    );
+  }
+
   // Persist the broadcast + its recipients. The count columns
   // (sent/delivered/read/replied/failed) are owned by the DB aggregate
   // trigger (migrations 003/005) and derived purely from
@@ -204,7 +229,7 @@ export async function createBroadcast(
       template_name: templateName,
       template_language: templateLanguage,
       status: 'sending',
-      total_recipients: deduped.length,
+      total_recipients: filtered.length,
     })
     .select('id')
     .single();
@@ -216,7 +241,7 @@ export async function createBroadcast(
   const { data: recipientRows, error: rErr } = await db
     .from('broadcast_recipients')
     .insert(
-      deduped.map((r) => ({
+      filtered.map((r) => ({
         broadcast_id: broadcast.id,
         contact_id: r.contactId,
         status: 'pending' as const,
@@ -230,7 +255,7 @@ export async function createBroadcast(
 
   // Pair each inserted recipient row back to its phone/params by
   // contact_id — unambiguous now that duplicates are collapsed.
-  const byContact = new Map(deduped.map((r) => [r.contactId, r]));
+  const byContact = new Map(filtered.map((r) => [r.contactId, r]));
   const planned: PlannedRecipient[] = recipientRows.map((row) => {
     const r = byContact.get(row.contact_id as string)!;
     return { recipientRowId: row.id as string, phone: r.phone, params: r.params };

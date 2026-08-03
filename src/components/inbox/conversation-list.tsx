@@ -12,6 +12,7 @@ import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
+import { useAuth } from "@/hooks/use-auth";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -44,7 +45,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "assigned";
 
 export function ConversationList({
   activeConversationId,
@@ -55,9 +56,11 @@ export function ConversationList({
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
+  const { user } = useAuth();
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
+    { label: t("filterAssignedToMe"), value: "assigned" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
@@ -163,6 +166,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "assigned") {
+      result = result.filter((c) => c.assigned_agent_id === user?.id);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -188,7 +193,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, user?.id]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
