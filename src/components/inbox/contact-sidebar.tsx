@@ -98,6 +98,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   // seccion simplemente no se muestra (ver render mas abajo).
   useEffect(() => {
     if (!contact?.phone) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFicha(null);
       return;
     }
