@@ -23,6 +23,7 @@ import {
   UserPlus,
   Check,
   Clock,
+  History,
   ArrowLeft,
   RefreshCw,
   PanelRightOpen,
@@ -140,6 +141,20 @@ const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string 
   { label: "Pending", value: "pending", color: "text-amber-400" },
   { label: "Closed", value: "closed", color: "text-muted-foreground" },
 ];
+// One row per status change / (un)assignment captured by the
+// `trg_log_conversation_changes` DB trigger (migration 042). Fetched
+// on demand from /api/conversations/[id]/events when the agent opens
+// the "Actividad" dropdown -- this is an audit log, not a live feed.
+interface ConversationEventRow {
+  id: string;
+  event_type: "status_changed" | "assigned" | "unassigned";
+  from_value: string | null;
+  to_value: string | null;
+  from_name: string | null;
+  to_name: string | null;
+  actor_name: string | null;
+  created_at: string;
+}
 
 /**
  * WhatsApp-style doodle background applied to the chat area (both the
@@ -857,6 +872,45 @@ export function MessageThread({
     );
   }
 
+  // Audit trail for this ticket -- fetched lazily when the agent
+  // opens the "Actividad" dropdown, not kept live. Reset whenever the
+  // open conversation changes so a stale list from the previous
+  // ticket never flashes before the new fetch resolves.
+  const [activityEvents, setActivityEvents] = useState<ConversationEventRow[] | null>(null);
+  const [activityLoading, setActivityLoading] = useState(false);
+  useEffect(() => {
+    setActivityEvents(null);
+  }, [conversation.id]);
+  const loadActivity = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/events`);
+      const json = await res.json();
+      setActivityEvents(res.ok ? json.events : []);
+    } catch {
+      setActivityEvents([]);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, [conversation.id]);
+  const statusLabel = (value: string | null) => {
+    const opt = STATUS_OPTIONS.find((o) => o.value === value);
+    return opt ? t(`status${opt.label}`) : value ?? "";
+  };
+  const formatActivityLine = (e: ConversationEventRow) => {
+    const actor = e.actor_name ?? t("activitySystem");
+    if (e.event_type === "status_changed") {
+      return t("activityStatusChanged", {
+        actor,
+        from: statusLabel(e.from_value),
+        to: statusLabel(e.to_value),
+      });
+    }
+    if (e.event_type === "assigned") {
+      return t("activityAssigned", { actor, to: e.to_name ?? t("activityUnknownUser") });
+    }
+    return t("activityUnassigned", { actor, from: e.from_name ?? t("activityUnknownUser") });
+  };
   const displayName = contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
@@ -971,6 +1025,41 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Activity / audit trail -- who changed status or
+              assignment and when. Fetches on open; see
+              /api/conversations/[id]/events. */}
+          <DropdownMenu onOpenChange={(nextOpen: boolean) => { if (nextOpen) loadActivity(); }}>
+            <DropdownMenuTrigger
+              aria-label={t("activity")}
+              title={t("activity")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <History className="h-3.5 w-3.5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="max-h-80 w-72 overflow-y-auto border-border bg-popover"
+            >
+              {activityLoading ? (
+                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                  {t("activityLoading")}
+                </DropdownMenuItem>
+              ) : !activityEvents || activityEvents.length === 0 ? (
+                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                  {t("activityEmpty")}
+                </DropdownMenuItem>
+              ) : (
+                activityEvents.map((e) => (
+                  <div key={e.id} className="px-2 py-1.5 text-xs text-popover-foreground">
+                    <p>{formatActivityLine(e)}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {format(new Date(e.created_at), "dd/MM/yyyy HH:mm")}
+                    </p>
+                  </div>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
           {/* Status dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(

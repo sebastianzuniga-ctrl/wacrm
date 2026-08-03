@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { hasMinRole } from "@/lib/auth/roles"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Loader2, Search, ShieldAlert } from "lucide-react"
+import { History, Loader2, Search, ShieldAlert } from "lucide-react"
 
 interface Stats {
   total: number
@@ -44,6 +44,29 @@ const STATUS_COLOR: Record<string, string> = {
   closed: "text-muted-foreground",
 }
 
+interface EventRow {
+  id: string
+  event_type: "status_changed" | "assigned" | "unassigned"
+  from_value: string | null
+  to_value: string | null
+  from_name: string | null
+  to_name: string | null
+  actor_name: string | null
+  created_at: string
+}
+function formatEvent(e: EventRow) {
+  const actor = e.actor_name ?? "Sistema"
+  if (e.event_type === "status_changed") {
+    const from = STATUS_LABEL[e.from_value ?? ""] ?? e.from_value ?? ""
+    const to = STATUS_LABEL[e.to_value ?? ""] ?? e.to_value ?? ""
+    return `${actor} cambió el estado de ${from} a ${to}`
+  }
+  if (e.event_type === "assigned") {
+    return `${actor} asignó la conversación a ${e.to_name ?? "Usuario"}`
+  }
+  return `${actor} quitó la asignación de ${e.from_name ?? "Usuario"}`
+}
+
 export default function HistorialPage() {
   const { accountRole, profileLoading } = useAuth()
   const [stats, setStats] = useState<Stats | null>(null)
@@ -52,7 +75,27 @@ export default function HistorialPage() {
   const [searching, setSearching] = useState(false)
   const [results, setResults] = useState<ContactResult[] | null>(null)
   const [searchError, setSearchError] = useState<string | null>(null)
-
+  const [expandedConvId, setExpandedConvId] = useState<string | null>(null)
+  const [activityByConv, setActivityByConv] = useState<Record<string, EventRow[] | "loading">>({})
+  const toggleActivity = useCallback(
+    async (convId: string) => {
+      if (expandedConvId === convId) {
+        setExpandedConvId(null)
+        return
+      }
+      setExpandedConvId(convId)
+      if (activityByConv[convId] !== undefined) return
+      setActivityByConv((prev) => ({ ...prev, [convId]: "loading" }))
+      try {
+        const res = await fetch(`/api/conversations/${convId}/events`)
+        const body = await res.json().catch(() => ({}))
+        setActivityByConv((prev) => ({ ...prev, [convId]: res.ok ? body.events ?? [] : [] }))
+      } catch {
+        setActivityByConv((prev) => ({ ...prev, [convId]: [] }))
+      }
+    },
+    [expandedConvId, activityByConv]
+  )
   const allowed = !profileLoading && !!accountRole && hasMinRole(accountRole, "admin")
 
   const loadStats = useCallback(async () => {
@@ -206,23 +249,50 @@ export default function HistorialPage() {
                       <p className="text-xs text-muted-foreground">Sin conversaciones.</p>
                     ) : (
                       contact.conversations.map((conv) => (
-                        <Link
-                          key={conv.id}
-                          href={`/inbox?c=${conv.id}`}
-                          className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs hover:bg-muted"
-                        >
-                          <span className="truncate text-muted-foreground">
-                            {conv.last_message_text || "Sin mensajes"}
-                          </span>
-                          <span className="ml-2 flex shrink-0 items-center gap-2">
-                            <span className={STATUS_COLOR[conv.status] ?? "text-muted-foreground"}>
-                              {STATUS_LABEL[conv.status] ?? conv.status}
+                        <div key={conv.id} className="rounded-md">
+                          <div className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs hover:bg-muted">
+                            <Link
+                              href={`/inbox?c=${conv.id}`}
+                              className="flex-1 truncate text-muted-foreground hover:text-foreground"
+                            >
+                              {conv.last_message_text || "Sin mensajes"}
+                            </Link>
+                            <span className="ml-2 flex shrink-0 items-center gap-2">
+                              <span className={STATUS_COLOR[conv.status] ?? "text-muted-foreground"}>
+                                {STATUS_LABEL[conv.status] ?? conv.status}
+                              </span>
+                              <span className="text-muted-foreground">
+                                {new Date(conv.created_at).toLocaleDateString("es-CL")}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => toggleActivity(conv.id)}
+                                title="Ver actividad"
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <History className="h-3.5 w-3.5" />
+                              </button>
                             </span>
-                            <span className="text-muted-foreground">
-                              {new Date(conv.created_at).toLocaleDateString("es-CL")}
-                            </span>
-                          </span>
-                        </Link>
+                          </div>
+                          {expandedConvId === conv.id && (
+                            <div className="ml-2 mt-1 space-y-1 border-l border-border pl-3">
+                              {activityByConv[conv.id] === "loading" ? (
+                                <p className="text-xs text-muted-foreground">Cargando…</p>
+                              ) : !activityByConv[conv.id] || (activityByConv[conv.id] as EventRow[]).length === 0 ? (
+                                <p className="text-xs text-muted-foreground">Sin actividad registrada.</p>
+                              ) : (
+                                (activityByConv[conv.id] as EventRow[]).map((ev) => (
+                                  <div key={ev.id} className="text-xs text-muted-foreground">
+                                    <span>{formatEvent(ev)}</span>
+                                    <span className="ml-2 text-[10px]">
+                                      {new Date(ev.created_at).toLocaleString("es-CL")}
+                                    </span>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </div>
                       ))
                     )}
                   </div>

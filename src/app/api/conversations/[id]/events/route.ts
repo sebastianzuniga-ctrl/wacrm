@@ -6,6 +6,12 @@
 // trg_log_conversation_changes (migracion 042). Cualquier
 // miembro de la cuenta puede verlo -- es informativo sobre un
 // ticket al que ya tiene acceso via RLS de conversations.
+//
+// actor_name / from_name / to_name vienen en null cuando no hay
+// usuario que resolver (evento del sistema, o perfil ausente) --
+// el frontend decide el texto ("Sistema"/"System"/"시스템") segun
+// el idioma via next-intl, en vez de que el backend hardcodee un
+// idioma.
 // ============================================================
 import { NextResponse } from 'next/server';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
@@ -54,10 +60,8 @@ export async function GET(
       namesByUserId = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name]));
     }
 
-    const resolveAssignee = (value: string | null) => {
-      if (!value) return null;
-      return namesByUserId.get(value) ?? 'Usuario';
-    };
+    const resolveAssignee = (value: string | null) =>
+      value ? namesByUserId.get(value) ?? null : null;
 
     const enriched = (events ?? []).map((e) => ({
       id: e.id,
@@ -67,7 +71,7 @@ export async function GET(
       from_name: e.event_type === 'status_changed' ? null : resolveAssignee(e.from_value),
       to_name: e.event_type === 'status_changed' ? null : resolveAssignee(e.to_value),
       created_at: e.created_at,
-      actor_name: e.actor_id ? namesByUserId.get(e.actor_id) ?? 'Usuario' : 'Sistema',
+      actor_name: e.actor_id ? namesByUserId.get(e.actor_id) ?? null : null,
     }));
 
     return NextResponse.json({ events: enriched });
