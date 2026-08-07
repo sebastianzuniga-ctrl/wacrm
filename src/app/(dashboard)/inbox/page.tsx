@@ -399,6 +399,19 @@ function InboxPageInner() {
   const handleManualRefresh = useCallback(() => {
     setResyncToken((n) => n + 1);
   }, []);
+  /**
+   * TEMP polling fallback (2026-08-07): Supabase Realtime is broken on
+   * this server (Kong 431 on the websocket upgrade — see wacrm addendum
+   * add3.md, agent-dashboard section). Until that's fixed, poll every
+   * 12s using the same resyncToken path the manual refresh button uses.
+   * Remove this once Realtime is confirmed working again.
+   */
+  useEffect(() => {
+    const id = setInterval(() => {
+      setResyncToken((n) => n + 1);
+    }, 12000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleConversationsLoaded = useCallback(
     (loaded: Conversation[]) => {

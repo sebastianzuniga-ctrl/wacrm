@@ -9,6 +9,7 @@ import {
   UserPlus,
   DollarSign,
   Send,
+  Loader2,
 } from 'lucide-react'
 
 import {
@@ -44,7 +45,7 @@ type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency, isAgent } = useAuth()
+  const { defaultCurrency, isAgent, profileLoading } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
@@ -138,6 +139,18 @@ export default function DashboardPage() {
   // admin/owner-oriented and just add scroll for someone triaging
   // tickets. All the hooks above still run either way — this only
   // branches the render.
+  // Wait for the profile to load before deciding which dashboard to
+  // render -- `isAgent` defaults to false while profileLoading is true,
+  // so without this gate an agent would see a flash of the admin
+  // dashboard (with its business-metric queries firing) before the
+  // switch to AgentDashboard kicks in once the role resolves.
+  if (profileLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    )
+  }
   if (isAgent) {
     return <AgentDashboard />
   }

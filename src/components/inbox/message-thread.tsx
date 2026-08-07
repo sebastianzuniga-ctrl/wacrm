@@ -287,39 +287,31 @@ export function MessageThread({
   // separate from the unread-reset effect so that incoming messages
   // arriving while the thread is open don't trigger a full refetch —
   // they only flip hasUnread, which only the reset effect listens to.
+  const hasLoadedOnceRef = useRef<string | null>(null);
   useEffect(() => {
     if (!conversationId) return;
-
     const supabase = createClient();
     let cancelled = false;
-
+    const isFirstLoadForThisConversation = hasLoadedOnceRef.current !== conversationId;
     (async () => {
-      setLoading(true);
-
+      if (isFirstLoadForThisConversation) setLoading(true);
       const { data, error } = await supabase
         .from("messages")
         .select("*")
         .eq("conversation_id", conversationId)
         .order("created_at", { ascending: true });
-
       if (cancelled) return;
-
       if (error) {
         console.error("Failed to fetch messages:", error);
       } else {
         onMessagesLoadedRef.current(data ?? []);
+        hasLoadedOnceRef.current = conversationId;
       }
-
-      if (!cancelled) setLoading(false);
+      if (!cancelled && isFirstLoadForThisConversation) setLoading(false);
     })();
-
     return () => {
       cancelled = true;
     };
-    // `resyncToken` is included so the parent can force a refetch when
-    // the realtime channel reconnects or the tab regains focus —
-    // realtime is best-effort and any message events sent while the WS
-    // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
