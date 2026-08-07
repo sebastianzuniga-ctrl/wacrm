@@ -605,7 +605,14 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!args.contactId) throw new Error('close_conversation needs a contact')
       await db
         .from('conversations')
-        .update({ status: 'closed', updated_at: new Date().toISOString() })
+        .update({
+          status: 'closed',
+          updated_at: new Date().toISOString(),
+          // Ticket is closing — no longer waiting on a human, stop the
+          // ticket-alert clock.
+          handoff_requested_at: null,
+          handoff_alert_last_sent_at: null,
+        })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
       return 'conversation closed'

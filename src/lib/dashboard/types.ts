@@ -65,6 +65,17 @@ export interface HandoffQueueItem {
   /** ISO timestamp — drives the relative "waiting since" label + sort. */
   waitingSince: string
 }
+/** A conversation already assigned to the current agent — their own
+ *  open/pending tickets, shown on the agent dashboard. */
+export interface MyTicketItem {
+  id: string
+  contactName: string | null
+  phone: string
+  preview: string | null
+  status: 'open' | 'pending'
+  /** ISO timestamp of the last activity — drives sort + relative label. */
+  lastActivity: string
+}
 
 export interface ActivityItem {
   id: string

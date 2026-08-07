@@ -1185,7 +1185,11 @@ async function findOrCreateConversation(
   if (mostRecent && mostRecent.status !== 'closed') {
     const { error: closeError } = await supabaseAdmin()
       .from('conversations')
-      .update({ status: 'closed' })
+      .update({
+        status: 'closed',
+        handoff_requested_at: null,
+        handoff_alert_last_sent_at: null,
+      })
       .eq('id', mostRecent.id)
     if (closeError) {
       console.error('Error auto-closing stale conversation:', closeError)

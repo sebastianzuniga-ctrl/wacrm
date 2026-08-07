@@ -47,14 +47,22 @@ export async function GET(request: Request) {
   // got a message at all fall back to created_at in the second.
   const { data: updated1, error: err1 } = await admin
     .from('conversations')
-    .update({ status: 'closed' })
+    .update({
+      status: 'closed',
+      handoff_requested_at: null,
+      handoff_alert_last_sent_at: null,
+    })
     .in('status', ['open', 'pending'])
     .lt('last_message_at', cutoff)
     .select('id')
 
   const { data: updated2, error: err2 } = await admin
     .from('conversations')
-    .update({ status: 'closed' })
+    .update({
+      status: 'closed',
+      handoff_requested_at: null,
+      handoff_alert_last_sent_at: null,
+    })
     .in('status', ['open', 'pending'])
     .is('last_message_at', null)
     .lt('created_at', cutoff)

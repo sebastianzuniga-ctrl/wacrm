@@ -12,6 +12,7 @@ import type {
   ConversationsSeriesPoint,
   HandoffQueueItem,
   MetricsBundle,
+  MyTicketItem,
   PipelineDonutData,
   PipelineStageSlice,
   ResponseTimeBucket,
@@ -412,12 +413,12 @@ export async function loadHandoffQueue(
   const { data, error } = await db
     .from('conversations')
     .select(
-      'id, last_message_text, last_message_at, ai_handoff_summary, updated_at, contacts(name, phone)',
+      'id, last_message_text, last_message_at, ai_handoff_summary, updated_at, handoff_requested_at, contacts(name, phone)',
     )
     .eq('ai_autoreply_disabled', true)
     .is('assigned_agent_id', null)
     .neq('status', 'closed')
-    .order('last_message_at', { ascending: true })
+    .order('handoff_requested_at', { ascending: true, nullsFirst: true })
     .limit(limit)
 
   if (error || !data) return []
@@ -429,6 +430,7 @@ export async function loadHandoffQueue(
       last_message_at: string | null
       ai_handoff_summary: string | null
       updated_at: string
+      handoff_requested_at: string | null
       contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null
     }>
   ).map((row) => {
@@ -438,7 +440,55 @@ export async function loadHandoffQueue(
       contactName: contact?.name ?? null,
       phone: contact?.phone ?? '',
       preview: row.last_message_text || row.ai_handoff_summary || null,
-      waitingSince: row.last_message_at ?? row.updated_at,
+      // Prefer the precise handoff timestamp (migration 043); older
+      // rows from before that column existed fall back to the old
+      // proxy so the queue doesn't break for in-flight tickets.
+      waitingSince: row.handoff_requested_at ?? row.last_message_at ?? row.updated_at,
+    }
+  })
+}
+
+// ------------------------------------------------------------
+// My tickets — conversations already assigned to the given agent,
+// still open/pending. Shown on the agent dashboard alongside the
+// shared handoff queue so an agent can see "what's mine" separately
+// from "what's up for grabs".
+// ------------------------------------------------------------
+export async function loadMyTickets(
+  db: DB,
+  userId: string,
+  limit = 20,
+): Promise<MyTicketItem[]> {
+  const { data, error } = await db
+    .from('conversations')
+    .select(
+      'id, status, last_message_text, last_message_at, updated_at, contacts(name, phone)',
+    )
+    .eq('assigned_agent_id', userId)
+    .in('status', ['open', 'pending'])
+    .order('last_message_at', { ascending: false })
+    .limit(limit)
+
+  if (error || !data) return []
+
+  return (
+    data as unknown as Array<{
+      id: string
+      status: 'open' | 'pending'
+      last_message_text: string | null
+      last_message_at: string | null
+      updated_at: string
+      contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null
+    }>
+  ).map((row) => {
+    const contact = Array.isArray(row.contacts) ? row.contacts[0] : row.contacts
+    return {
+      id: row.id,
+      contactName: contact?.name ?? null,
+      phone: contact?.phone ?? '',
+      preview: row.last_message_text,
+      status: row.status,
+      lastActivity: row.last_message_at ?? row.updated_at,
     }
   })
 }

@@ -36,6 +36,7 @@ import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 import { HandoffQueueCard } from '@/components/dashboard/handoff-queue-card'
+import { AgentDashboard } from '@/components/dashboard/agent-dashboard'
 
 import { useTranslations } from 'next-intl'
 
@@ -43,7 +44,7 @@ type RangeDays = 7 | 30 | 90
 
 export default function DashboardPage() {
   const t = useTranslations('Dashboard.page')
-  const { defaultCurrency } = useAuth()
+  const { defaultCurrency, isAgent } = useAuth()
   const [metrics, setMetrics] = useState<MetricsBundle | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
 
@@ -131,6 +132,15 @@ export default function DashboardPage() {
     },
     [series],
   )
+
+  // Agents get a lighter, action-oriented view (handoff queue + their
+  // own tickets) instead of the business metrics below, which are
+  // admin/owner-oriented and just add scroll for someone triaging
+  // tickets. All the hooks above still run either way — this only
+  // branches the render.
+  if (isAgent) {
+    return <AgentDashboard />
+  }
 
   return (
     <div className="space-y-5">

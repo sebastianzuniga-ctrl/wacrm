@@ -24,7 +24,12 @@ export async function POST(
     // Atomic claim: only succeeds while assigned_agent_id is still null.
     const { data: claimed, error: claimErr } = await ctx.supabase
       .from('conversations')
-      .update({ assigned_agent_id: ctx.userId })
+      .update({
+        assigned_agent_id: ctx.userId,
+        // A human is now on this thread — stop the ticket-alert clock.
+        handoff_requested_at: null,
+        handoff_alert_last_sent_at: null,
+      })
       .eq('id', id)
       .eq('account_id', ctx.accountId)
       .is('assigned_agent_id', null)

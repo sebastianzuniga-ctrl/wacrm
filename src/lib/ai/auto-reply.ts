@@ -163,6 +163,10 @@ export async function dispatchInboundToAiReply(
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
+        // Marks when this thread started waiting on a human, so the
+        // ticket-alert cron can notify jefatura if nobody claims it in
+        // time. Cleared on claim or on close (see claim route + cron).
+        handoff_requested_at: new Date().toISOString(),
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.
