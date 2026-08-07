@@ -100,19 +100,19 @@ const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
   { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
   { href: "/notifications", labelKey: "notifications", icon: Bell },
-  { href: "/contacts", labelKey: "contacts", icon: Users },
-  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
-  { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-  { href: "/campaign-rules", labelKey: "campaignRules", icon: Route },
-  { href: "/no-molestar", labelKey: "noMolestar", icon: ShieldOff },
-  { href: "/automations", labelKey: "automations", icon: Zap },
-  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-  { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/contacts", labelKey: "contacts", icon: Users, minRole: "admin" },
+  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch, minRole: "admin" },
+  { href: "/broadcasts", labelKey: "broadcasts", icon: Radio, minRole: "admin" },
+  { href: "/campaign-rules", labelKey: "campaignRules", icon: Route, minRole: "admin" },
+  { href: "/no-molestar", labelKey: "noMolestar", icon: ShieldOff, minRole: "admin" },
+  { href: "/automations", labelKey: "automations", icon: Zap, minRole: "admin" },
+  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true, minRole: "admin" },
+  { href: "/agents", labelKey: "aiAgents", icon: Bot, minRole: "admin" },
   { href: "/historial", labelKey: "historial", icon: History, minRole: "admin" },
 ];
 
 const bottomNavItems = [
-  { href: "/settings", labelKey: "settings", icon: Settings },
+  { href: "/settings", labelKey: "settings", icon: Settings, minRole: "admin" },
 ];
 
 interface SidebarProps {
