@@ -32,6 +32,10 @@ type Row = {
   business_hours_start: string; // "HH:MM:SS"
   business_hours_end: string;
   business_hours_closed_message: string;
+  business_hours_weekend_enabled: boolean;
+  business_hours_weekend_start: string;
+  business_hours_weekend_end: string;
+  business_hours_revert_message: string;
 };
 
 const DAYS: { iso: number; label: string }[] = [
@@ -61,6 +65,10 @@ export function BusinessHoursSettings() {
   const [start, setStart] = useState("09:00");
   const [end, setEnd] = useState("19:00");
   const [closedMessage, setClosedMessage] = useState("");
+  const [weekendEnabled, setWeekendEnabled] = useState(false);
+  const [weekendStart, setWeekendStart] = useState("09:00");
+  const [weekendEnd, setWeekendEnd] = useState("14:00");
+  const [revertMessage, setRevertMessage] = useState("");
 
   useEffect(() => {
     if (!accountId) return;
@@ -70,7 +78,7 @@ export function BusinessHoursSettings() {
       const { data, error } = await supabase
         .from("accounts")
         .select(
-          "business_hours_enabled, business_hours_days, business_hours_start, business_hours_end, business_hours_closed_message"
+          "business_hours_enabled, business_hours_days, business_hours_start, business_hours_end, business_hours_closed_message, business_hours_weekend_enabled, business_hours_weekend_start, business_hours_weekend_end, business_hours_revert_message"
         )
         .eq("id", accountId)
         .single();
@@ -87,6 +95,10 @@ export function BusinessHoursSettings() {
       setStart(row.business_hours_start.slice(0, 5));
       setEnd(row.business_hours_end.slice(0, 5));
       setClosedMessage(row.business_hours_closed_message);
+      setWeekendEnabled(row.business_hours_weekend_enabled);
+      setWeekendStart(row.business_hours_weekend_start.slice(0, 5));
+      setWeekendEnd(row.business_hours_weekend_end.slice(0, 5));
+      setRevertMessage(row.business_hours_revert_message);
       setLoading(false);
     })();
     return () => {
@@ -101,9 +113,13 @@ export function BusinessHoursSettings() {
   }
 
   const validTimes = /^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end) && start < end;
+  const validWeekendTimes =
+    !weekendEnabled ||
+    (/^\d{2}:\d{2}$/.test(weekendStart) && /^\d{2}:\d{2}$/.test(weekendEnd) && weekendStart < weekendEnd);
   const validDays = days.length > 0;
   const validMessage = closedMessage.trim().length > 0;
-  const isValid = validTimes && validDays && validMessage;
+  const validRevertMessage = revertMessage.trim().length > 0;
+  const isValid = validTimes && validWeekendTimes && validDays && validMessage && validRevertMessage;
 
   async function handleSave() {
     if (!accountId || !isValid) return;
@@ -116,6 +132,10 @@ export function BusinessHoursSettings() {
         business_hours_start: `${start}:00`,
         business_hours_end: `${end}:00`,
         business_hours_closed_message: closedMessage.trim(),
+        business_hours_weekend_enabled: weekendEnabled,
+        business_hours_weekend_start: `${weekendStart}:00`,
+        business_hours_weekend_end: `${weekendEnd}:00`,
+        business_hours_revert_message: revertMessage.trim(),
       })
       .eq("id", accountId);
     setSaving(false);
@@ -129,6 +149,10 @@ export function BusinessHoursSettings() {
       business_hours_start: `${start}:00`,
       business_hours_end: `${end}:00`,
       business_hours_closed_message: closedMessage.trim(),
+      business_hours_weekend_enabled: weekendEnabled,
+      business_hours_weekend_start: `${weekendStart}:00`,
+      business_hours_weekend_end: `${weekendEnd}:00`,
+      business_hours_revert_message: revertMessage.trim(),
     });
     toast.success("Horario de atención guardado.");
   }
@@ -139,7 +163,11 @@ export function BusinessHoursSettings() {
       sortedDays(original.business_hours_days).join(",") !== days.join(",") ||
       original.business_hours_start.slice(0, 5) !== start ||
       original.business_hours_end.slice(0, 5) !== end ||
-      original.business_hours_closed_message !== closedMessage.trim());
+      original.business_hours_closed_message !== closedMessage.trim() ||
+      original.business_hours_weekend_enabled !== weekendEnabled ||
+      original.business_hours_weekend_start.slice(0, 5) !== weekendStart ||
+      original.business_hours_weekend_end.slice(0, 5) !== weekendEnd ||
+      original.business_hours_revert_message !== revertMessage.trim());
 
   const disabled = !canEditSettings || profileLoading || loading;
 
@@ -217,6 +245,60 @@ export function BusinessHoursSettings() {
             rows={3}
           />
           {!validMessage && (
+            <p className="text-xs text-destructive">El mensaje no puede estar vacío.</p>
+          )}
+        </div>
+
+        <div className="h-px bg-border" />
+
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-foreground">Horario distinto para sábado y domingo</Label>
+            <Switch checked={weekendEnabled} onCheckedChange={setWeekendEnabled} disabled={disabled || !enabled} />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Si está desactivado, sábado/domingo (cuando estén marcados arriba) usan el mismo horario de semana.
+          </p>
+          {weekendEnabled && (
+            <div className="grid gap-4 sm:grid-cols-2 sm:max-w-md">
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Hora de inicio (fin de semana)</Label>
+                <Input
+                  type="time"
+                  value={weekendStart}
+                  onChange={(e) => setWeekendStart(e.target.value)}
+                  disabled={disabled || !enabled}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label className="text-muted-foreground">Hora de término (fin de semana)</Label>
+                <Input
+                  type="time"
+                  value={weekendEnd}
+                  onChange={(e) => setWeekendEnd(e.target.value)}
+                  disabled={disabled || !enabled}
+                />
+              </div>
+            </div>
+          )}
+          {!validWeekendTimes && (
+            <p className="text-xs text-destructive">La hora de término debe ser posterior a la de inicio.</p>
+          )}
+        </div>
+
+        <div className="h-px bg-border" />
+
+        <div className="grid gap-2">
+          <Label className="text-muted-foreground">
+            Mensaje al revertir un ticket a la IA (cuando nadie lo tomó antes del cierre)
+          </Label>
+          <Textarea
+            value={revertMessage}
+            onChange={(e) => setRevertMessage(e.target.value)}
+            disabled={disabled || !enabled}
+            rows={3}
+          />
+          {!validRevertMessage && (
             <p className="text-xs text-destructive">El mensaje no puede estar vacío.</p>
           )}
         </div>

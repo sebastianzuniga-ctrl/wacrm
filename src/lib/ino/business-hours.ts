@@ -6,6 +6,10 @@ export interface BusinessHoursConfig {
   business_hours_start: string // 'HH:MM:SS' (Postgres time)
   business_hours_end: string
   business_hours_closed_message: string
+  business_hours_weekend_enabled: boolean
+  business_hours_weekend_start: string
+  business_hours_weekend_end: string
+  business_hours_revert_message: string
 }
 
 export async function loadBusinessHours(
@@ -15,7 +19,7 @@ export async function loadBusinessHours(
   const { data } = await db
     .from('accounts')
     .select(
-      'business_hours_enabled, business_hours_days, business_hours_start, business_hours_end, business_hours_closed_message',
+      'business_hours_enabled, business_hours_days, business_hours_start, business_hours_end, business_hours_closed_message, business_hours_weekend_enabled, business_hours_weekend_start, business_hours_weekend_end, business_hours_revert_message',
     )
     .eq('id', accountId)
     .maybeSingle()
@@ -42,12 +46,16 @@ function santiagoNowParts(): { isoDay: number; hhmm: string } {
   return { isoDay: map[weekdayShort] ?? 1, hhmm: `${hour}:${minute}` }
 }
 
+const WEEKEND_DAYS = new Set([6, 7])
+
 /** true = hay ejecutivos disponibles ahora mismo (o la feature está desactivada). */
 export function isWithinBusinessHours(config: BusinessHoursConfig): boolean {
   if (!config.business_hours_enabled) return true
   const { isoDay, hhmm } = santiagoNowParts()
   if (!config.business_hours_days.includes(isoDay)) return false
-  const start = config.business_hours_start.slice(0, 5)
-  const end = config.business_hours_end.slice(0, 5)
+
+  const useWeekendHours = WEEKEND_DAYS.has(isoDay) && config.business_hours_weekend_enabled
+  const start = (useWeekendHours ? config.business_hours_weekend_start : config.business_hours_start).slice(0, 5)
+  const end = (useWeekendHours ? config.business_hours_weekend_end : config.business_hours_end).slice(0, 5)
   return hhmm >= start && hhmm <= end
 }
