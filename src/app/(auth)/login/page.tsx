@@ -49,15 +49,34 @@ function LoginPageInner() {
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    // Sin '@' -> login del sistema interno de INO (endpoint server-side
+    // que valida contra loginJson.jsp y sincroniza la sesión de
+    // Supabase). Con '@' -> flujo de siempre, directo contra Supabase.
+    const isInoLogin = !email.includes("@");
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
+    if (isInoLogin) {
+      const res = await fetch("/api/auth/ino-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ login: email, password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Error al iniciar sesión");
+        setLoading(false);
+        return;
+      }
+    } else {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+        return;
+      }
     }
 
     // Full-page navigation (not router.push) so the browser issues a
@@ -108,7 +127,7 @@ function LoginPageInner() {
               </Label>
               <Input
                 id="email"
-                type="email"
+                type="text"
                 placeholder={t('emailPlaceholder')}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

@@ -73,6 +73,7 @@ import {
   PresenceDot,
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { LinkInoUserDialog } from './link-ino-user-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
 
@@ -135,6 +136,7 @@ export function MembersTab() {
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [linkInoOpen, setLinkInoOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
@@ -287,10 +289,15 @@ export function MembersTab() {
         description={t('description')}
         action={
           <RequireRole min="admin">
-            <Button onClick={() => setInviteOpen(true)}>
-              <Plus className="size-4" />
-              {t('inviteMember')}
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setInviteOpen(true)}>
+                <Plus className="size-4" />
+                {t('inviteMember')}
+              </Button>
+              <Button variant="outline" onClick={() => setLinkInoOpen(true)}>
+                Vincular usuario INO
+              </Button>
+            </div>
           </RequireRole>
         }
       />
@@ -563,6 +570,11 @@ export function MembersTab() {
       <InviteMemberDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
+        onCreated={loadEverything}
+      />
+      <LinkInoUserDialog
+        open={linkInoOpen}
+        onOpenChange={setLinkInoOpen}
         onCreated={loadEverything}
       />
 
