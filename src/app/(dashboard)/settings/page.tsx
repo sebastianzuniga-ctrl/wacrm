@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 
 import { useAuth } from '@/hooks/use-auth';
+import { hasMinRole } from '@/lib/auth/roles';
+import { ShieldAlert, Loader2 } from 'lucide-react';
 import { useTheme } from '@/hooks/use-theme';
 import { SettingsRail } from '@/components/settings/settings-rail';
 import { SettingsOverview } from '@/components/settings/settings-overview';
@@ -14,6 +16,7 @@ import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { BroadcastPacingSettings } from '@/components/settings/broadcast-pacing-settings';
 import { TicketAlertsSettings } from '@/components/settings/ticket-alerts-settings';
+import { BusinessHoursSettings } from '@/components/settings/business-hours-settings';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -44,7 +47,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, accountRole, profileLoading } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -81,6 +84,7 @@ function SettingsPageInner() {
         <WhatsAppConfig />
         <BroadcastPacingSettings />
         <TicketAlertsSettings />
+        <BusinessHoursSettings />
       </>
     ),
     templates: <TemplateManager />,
@@ -91,6 +95,25 @@ function SettingsPageInner() {
     api: <ApiKeysSettings />,
   };
 
+  const allowed = !profileLoading && !!accountRole && hasMinRole(accountRole, "admin");
+  if (profileLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+  if (!allowed) {
+    return (
+      <div className="flex h-64 flex-col items-center justify-center gap-2 text-center">
+        <ShieldAlert className="h-8 w-8 text-muted-foreground" />
+        <p className="text-sm font-medium text-foreground">Acceso restringido</p>
+        <p className="max-w-sm text-sm text-muted-foreground">
+          Esta sección es solo para administradores.
+        </p>
+      </div>
+    );
+  }
   return (
     <div>
       <div>

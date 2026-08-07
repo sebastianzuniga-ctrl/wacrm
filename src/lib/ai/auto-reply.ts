@@ -9,6 +9,7 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { loadBusinessHours, isWithinBusinessHours } from '@/lib/ino/business-hours'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -149,6 +150,25 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
+      // Handoff fuera de horario de atención: no hay ejecutivos para
+      // tomar el ticket, así que NO pausamos la IA ni lo asignamos —
+      // el bot sigue conversando, solo se le informa al cliente que
+      // no hay ejecutivos disponibles ahora mismo.
+      if (handoff) {
+        const bh = await loadBusinessHours(db, accountId)
+        if (bh && !isWithinBusinessHours(bh)) {
+          await engineSendText({
+            accountId,
+            userId: configOwnerUserId,
+            conversationId,
+            contactId,
+            text: bh.business_hours_closed_message,
+            aiGenerated: true,
+          })
+          return
+        }
+      }
+
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human. We (a) pause the bot here
       // (sticky until re-enabled), (b) route the conversation to the
