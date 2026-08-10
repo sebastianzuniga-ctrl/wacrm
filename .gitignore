@@ -45,3 +45,6 @@ next-env.d.ts
 
 # Cron logs — rewritten constantly by crontab, generate noise on every commit
 logs/
+
+# Dumps de backup de la base de datos - NUNCA a git (datos de pacientes + crecen sin límite)
+backups/
