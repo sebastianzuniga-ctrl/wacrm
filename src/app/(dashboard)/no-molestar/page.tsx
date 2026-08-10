@@ -1,4 +1,5 @@
 "use client"
+import { AdminGate } from '@/components/auth/admin-gate';
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import { ShieldOff, Loader2, Trash2, Plus } from "lucide-react"
@@ -12,7 +13,7 @@ interface DndContact {
   do_not_disturb_source: string | null
 }
 
-export default function NoMolestarPage() {
+function NoMolestarPageInner() {
   const [contacts, setContacts] = useState<DndContact[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [phone, setPhone] = useState("")
@@ -173,4 +174,13 @@ export default function NoMolestarPage() {
       )}
     </div>
   )
+}
+
+
+export default function NoMolestarPage() {
+  return (
+    <AdminGate>
+      <NoMolestarPageInner />
+    </AdminGate>
+  );
 }

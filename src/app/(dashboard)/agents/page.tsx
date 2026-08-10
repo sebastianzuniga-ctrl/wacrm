@@ -1,4 +1,5 @@
 'use client';
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useEffect, useState } from 'react';
 import { Bot, Sparkles, Settings2, BarChart3 } from 'lucide-react';
@@ -11,7 +12,7 @@ import { canEditSettings } from '@/lib/auth/roles';
 
 type Tab = 'playground' | 'setup' | 'usage';
 
-export default function AgentsPage() {
+function AgentsPageInner() {
   const { accountRole } = useAuth();
   const canViewUsage = accountRole ? canEditSettings(accountRole) : false;
   const [tab, setTab] = useState<Tab>('playground');
@@ -85,5 +86,14 @@ export default function AgentsPage() {
         </Tabs>
       )}
     </div>
+  );
+}
+
+
+export default function AgentsPage() {
+  return (
+    <AdminGate>
+      <AgentsPageInner />
+    </AdminGate>
   );
 }

@@ -1,4 +1,5 @@
 'use client';
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -64,7 +65,7 @@ interface ContactWithTags extends Contact {
   tags?: Tag[];
 }
 
-export default function ContactsPage() {
+function ContactsPageInner() {
   const t = useTranslations('Contacts.page');
   const supabase = createClient();
   const canEdit = useCan('send-messages');
@@ -828,5 +829,14 @@ export default function ContactsPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+
+export default function ContactsPage() {
+  return (
+    <AdminGate>
+      <ContactsPageInner />
+    </AdminGate>
   );
 }

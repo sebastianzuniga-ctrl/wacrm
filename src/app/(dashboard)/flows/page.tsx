@@ -1,4 +1,5 @@
 "use client";
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -82,7 +83,7 @@ const TEMPLATE_ICONS = {
   UserPlus,
 } as const;
 
-export default function FlowsPage() {
+function FlowsPageInner() {
   const router = useRouter();
   const canCreate = useCan("send-messages");
   const t = useTranslations("Flows.list");
@@ -437,4 +438,13 @@ function describeTrigger(flow: FlowRow, t: ReturnType<typeof useTranslations>): 
     return t("triggerFirstInbound");
   }
   return t("triggerManual");
+}
+
+
+export default function FlowsPage() {
+  return (
+    <AdminGate>
+      <FlowsPageInner />
+    </AdminGate>
+  );
 }

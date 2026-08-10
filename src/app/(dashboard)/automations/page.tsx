@@ -1,4 +1,5 @@
 "use client"
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -58,7 +59,7 @@ const TEMPLATE_ICON: Record<TemplateSlug, typeof Zap> = {
   follow_up_reminder: PhoneCall,
 }
 
-export default function AutomationsPage() {
+function AutomationsPageInner() {
   const router = useRouter()
   const canCreate = useCan("send-messages")
   const t = useTranslations("Automations.list")
@@ -365,4 +366,13 @@ function AutomationCard({
       </div>
     </li>
   )
+}
+
+
+export default function AutomationsPage() {
+  return (
+    <AdminGate>
+      <AutomationsPageInner />
+    </AdminGate>
+  );
 }

@@ -1,4 +1,5 @@
 'use client';
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -57,7 +58,7 @@ function RateCell({
   );
 }
 
-export default function BroadcastsPage() {
+function BroadcastsPageInner() {
   const router = useRouter();
   const t = useTranslations('Broadcasts.page');
   const tStatus = useTranslations('Broadcasts.status');
@@ -287,5 +288,14 @@ export default function BroadcastsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+
+export default function BroadcastsPage() {
+  return (
+    <AdminGate>
+      <BroadcastsPageInner />
+    </AdminGate>
   );
 }

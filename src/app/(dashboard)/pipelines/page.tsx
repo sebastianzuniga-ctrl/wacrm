@@ -1,4 +1,5 @@
 "use client";
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -45,7 +46,7 @@ const SPEC_DEFAULT_STAGES = [
   { name: "Won", color: "#22c55e", position: 4 }, // green
 ];
 
-export default function PipelinesPage() {
+function PipelinesPageInner() {
   const t = useTranslations("Pipelines.page");
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
@@ -490,5 +491,14 @@ export default function PipelinesPage() {
         onSaved={refreshDeals}
       />
     </div>
+  );
+}
+
+
+export default function PipelinesPage() {
+  return (
+    <AdminGate>
+      <PipelinesPageInner />
+    </AdminGate>
   );
 }

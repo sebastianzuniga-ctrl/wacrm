@@ -1,4 +1,5 @@
 "use client"
+import { AdminGate } from '@/components/auth/admin-gate';
 
 import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -26,7 +27,7 @@ function ruleKey(templateName: string, replyValue: string) {
   return `${templateName}\u0000${replyValue}`
 }
 
-export default function CampaignRulesPage() {
+function CampaignRulesPageInner() {
   const [templates, setTemplates] = useState<MessageTemplate[] | null>(null)
   const [rules, setRules] = useState<Map<string, RuleRow>>(new Map())
   const [error, setError] = useState<string | null>(null)
@@ -283,4 +284,13 @@ export default function CampaignRulesPage() {
       )}
     </div>
   )
+}
+
+
+export default function CampaignRulesPage() {
+  return (
+    <AdminGate>
+      <CampaignRulesPageInner />
+    </AdminGate>
+  );
 }
