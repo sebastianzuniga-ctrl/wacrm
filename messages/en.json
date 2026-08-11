@@ -1525,7 +1525,8 @@
       "fields": "Fields & tags",
       "deals": "Deals & currency",
       "members": "Team members",
-      "api": "API keys"
+      "api": "API keys",
+    "ino-queries": "Querys"
     },
     "groups": {
       "account": "Account",

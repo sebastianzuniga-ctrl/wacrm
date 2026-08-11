@@ -19,6 +19,7 @@ import { TicketAlertsSettings } from '@/components/settings/ticket-alerts-settin
 import { BusinessHoursSettings } from '@/components/settings/business-hours-settings';
 import { SatisfactionSurveySettings } from '@/components/settings/satisfaction-survey-settings';
 import { WebhookHmacToggleSettings } from '@/components/settings/webhook-hmac-toggle-settings';
+import { InoQueriesSettings } from '@/components/settings/ino-queries-settings';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -97,6 +98,7 @@ function SettingsPageInner() {
     deals: <DealsSettings />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
+    'ino-queries': <InoQueriesSettings />,
   };
 
   const allowed = !profileLoading && !!accountRole && hasMinRole(accountRole, "admin");
