@@ -14,7 +14,7 @@ DATE=$(date +%Y-%m-%d_%H%M%S)
 FILENAME="wacrm_${DATE}.dump"
 LOGFILE="/home/ino/wacrm/logs/backup-db.log"
 INO_NOTIFY_URL="http://sistema.ino.cl/DentWeb12/dent/rest/insNotificacion.jsp"
-INO_NOTIFY_TOKEN="987654321"
+INO_NOTIFY_TOKEN="$(grep -m1 "^INO_NOTIFY_TOKEN=" /home/ino/wacrm/.env | cut -d= -f2-)"
 
 mkdir -p "$BACKUP_DIR"
 
