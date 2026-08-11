@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import { getFichaActivaByPhone } from '@/lib/ino/sesion';
+import { getCitasByPacCodigo } from '@/lib/ino/citas';
 
 export async function GET(request: Request) {
   try {
@@ -30,7 +31,16 @@ export async function GET(request: Request) {
     }
 
     const ficha = await getFichaActivaByPhone(waId);
-    return NextResponse.json({ ficha });
+
+    // Citas actuales/futuras -- solo si hay una ficha activa
+    // resuelta a un pac_codigo real (no aplica a los estados
+    // 'seleccionando' / 'esperando_rut' / 'sin_sesion').
+    const citas =
+      ficha?.estado === 'activa' && ficha.pac_codigo
+        ? await getCitasByPacCodigo(ficha.pac_codigo)
+        : [];
+
+    return NextResponse.json({ ficha, citas });
   } catch (err) {
     return toErrorResponse(err);
   }

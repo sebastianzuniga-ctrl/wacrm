@@ -37,6 +37,12 @@ interface FichaInfo {
   es_paciente_ino: boolean | null;
 }
 
+interface CitaAgenda {
+  id_agenda: number;
+  fecha: string;
+  hora: string;
+}
+
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
@@ -49,6 +55,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
   const [ficha, setFicha] = useState<FichaInfo | null>(null);
+  const [citas, setCitas] = useState<CitaAgenda[]>([]);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
@@ -100,16 +107,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     if (!contact?.phone) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFicha(null);
+      setCitas([]);
       return;
     }
     let cancelled = false;
     fetch(`/api/ino-ficha?phone=${encodeURIComponent(contact.phone)}`)
       .then((res) => res.json())
       .then((body) => {
-        if (!cancelled) setFicha(body?.ficha ?? null);
+        if (!cancelled) {
+          setFicha(body?.ficha ?? null);
+          setCitas(Array.isArray(body?.citas) ? body.citas : []);
+        }
       })
       .catch(() => {
-        if (!cancelled) setFicha(null);
+        if (!cancelled) {
+          setFicha(null);
+          setCitas([]);
+        }
       });
     return () => {
       cancelled = true;
@@ -235,6 +249,26 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                       </p>
                       {ficha.rut && (
                         <p className="text-xs text-muted-foreground">RUT: {ficha.rut}</p>
+                      )}
+                      {citas.length > 0 && (
+                        <div className="mt-2 border-t border-border/60 pt-2">
+                          <p className="mb-1 text-xs font-medium text-muted-foreground">
+                            Citas agendadas
+                          </p>
+                          <ul className="space-y-1">
+                            {citas.map((cita) => {
+                              const [year, month, day] = cita.fecha.split("-");
+                              return (
+                                <li
+                                  key={cita.id_agenda}
+                                  className="text-xs text-foreground"
+                                >
+                                  {day}-{month}-{year} · {cita.hora}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
                       )}
                     </>
                   ) : ficha.estado === "seleccionando" ? (
