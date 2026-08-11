@@ -35,6 +35,27 @@ export type PresenceStatus = "online" | "away" | "offline";
 export interface PresenceRow {
   status: StoredPresence;
   last_seen_at: string;
+  /** Conversation this member has open right now, or null. Added in
+   *  migration 051_conversation_viewers.sql. */
+  viewing_conversation_id?: string | null;
+}
+
+/**
+ * A presence row counts as "actively viewing" a conversation if its
+ * heartbeat is fresh enough -- reuses OFFLINE_AFTER_MS as the same
+ * staleness bar as the online/away/offline derivation, so a closed
+ * tab stops showing as "viewing" on the same timeline it goes
+ * offline, without a separate constant to keep in sync.
+ */
+export function isActivelyViewing(
+  row: Pick<PresenceRow, "viewing_conversation_id" | "last_seen_at">,
+  conversationId: string,
+  now: number,
+): boolean {
+  if (row.viewing_conversation_id !== conversationId) return false;
+  const last = new Date(row.last_seen_at).getTime();
+  if (Number.isNaN(last)) return false;
+  return now - last <= OFFLINE_AFTER_MS;
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Eye,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -188,7 +189,7 @@ export function MessageThread({
   const tQuote = useTranslations("Inbox.replyQuote");
 
   const { user, accountRole } = useAuth();
-  const { getPresence, getRow, now } = usePresence();
+  const { getPresence, getRow, getViewers, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
@@ -857,6 +858,35 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
+  // Heartbeat de "estoy viendo esta conversacion", independiente del
+  // heartbeat global de PresenceHeartbeat (que solo reporta
+  // online/away de cuenta, no por conversacion). No pasa p_status --
+  // el RPC preserva el status ya reportado por el heartbeat global en
+  // ese caso (ver migracion 051_conversation_viewers.sql), asi que
+  // los dos heartbeats no se pisan entre si.
+  useEffect(() => {
+    if (!conversation?.id) return;
+    const supabase = createClient();
+    let cancelled = false;
+
+    const beatViewing = async (conversationId: string | null) => {
+      if (cancelled) return;
+      await supabase.rpc("touch_presence", {
+        p_conversation_id: conversationId,
+        p_update_conversation: true,
+      });
+    };
+
+    void beatViewing(conversation.id);
+    const interval = setInterval(() => void beatViewing(conversation.id), 20_000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      void beatViewing(null);
+    };
+  }, [conversation?.id]);
+
   // Audit trail for this ticket -- fetched lazily when the agent
   // opens the "Actividad" dropdown, not kept live. Declared above the
   // `!conversation || !contact` early return below so the hook
@@ -1236,6 +1266,25 @@ export function MessageThread({
         )}
       </div>
 
+      {/* "Alguien mas esta viendo esto" -- evita que dos ejecutivos
+          respondan al mismo paciente casi al mismo tiempo sin saberlo. */}
+      {(() => {
+        const viewerIds = getViewers(conversation.id, user?.id);
+        if (viewerIds.length === 0) return null;
+        const names = viewerIds
+          .map((id) => profiles.find((p) => p.user_id === id)?.full_name)
+          .filter((n): n is string => !!n);
+        const label =
+          names.length > 0
+            ? `${names.join(", ")} tambien esta viendo esta conversacion`
+            : `${viewerIds.length} persona(s) mas viendo esta conversacion`;
+        return (
+          <div className="flex items-center gap-2 border-b border-border bg-amber-500/10 px-3 py-1.5 text-xs text-amber-600 sm:px-4 dark:text-amber-400">
+            <Eye className="h-3.5 w-3.5 flex-shrink-0" />
+            <span className="truncate">{label}</span>
+          </div>
+        );
+      })()}
       {/* AI auto-reply banner — take over an active bot, or resume it
           after a handoff. Renders nothing unless the account has
           auto-reply configured. */}

@@ -1,23 +1,25 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import {
   derivePresence,
+  isActivelyViewing,
   type PresenceRow,
   type PresenceStatus,
-  type StoredPresence,
 } from "@/lib/presence";
 
-// How often the viewer re-derives presence locally. The online→offline
-// transition fires NO database event (it's just the clock passing the
-// staleness threshold), so without this tick a member who closes their
-// tab would appear online forever. ~15s keeps "offline" responsive
-// without busy-spinning.
-const RE_DERIVE_MS = 15_000;
+// Polling en vez de Supabase Realtime -- Realtime (postgres_changes
+// sobre websocket) esta roto en este deployment (ver
+// wacrm_add3.md/add4.md). Antes esta suscripcion nunca disparaba
+// tras la carga inicial, asi que un miembro que se conectaba DESPUES
+// de que otro cargara la pagina nunca aparecia online para ese otro,
+// y alguien que seguia activo podia aparecer como "away"/"offline"
+// incorrectamente porque su last_seen_at fresco nunca llegaba.
+// Mismo intervalo que el resto de los hooks de polling de la app.
+const POLL_INTERVAL_MS = 15_000;
 
 type PresenceMap = Map<string, PresenceRow>;
 
@@ -26,6 +28,12 @@ interface UsePresenceResult {
   getPresence: (userId: string) => PresenceStatus;
   /** Raw row for tooltips ("last seen …"). */
   getRow: (userId: string) => PresenceRow | undefined;
+  /**
+   * user_ids (excluyendo excludeUserId) que estan viendo activamente
+   * la conversacion dada ahora mismo -- alimenta el aviso "alguien
+   * mas esta viendo esto" en el inbox.
+   */
+  getViewers: (conversationId: string, excludeUserId?: string | null) => string[];
   /**
    * The clock value the hook is currently deriving against. Pass this
    * to `presenceLabel` / `formatLastSeen` so labels stay in lockstep
@@ -36,8 +44,8 @@ interface UsePresenceResult {
 
 /**
  * Live presence for every member of the caller's account. Reads the
- * `member_presence` table (RLS-scoped to the account), subscribes to
- * Realtime changes, and re-derives "offline" on a local timer.
+ * `member_presence` table (RLS-scoped to the account) via polling and
+ * re-derives "offline" on the same local timer.
  *
  * Account comes from useAuth; pass `enabled: false` to opt a consumer
  * out (e.g. while a parent sheet is closed).
@@ -45,12 +53,7 @@ interface UsePresenceResult {
 export function usePresence(enabled = true): UsePresenceResult {
   const { accountId } = useAuth();
 
-  // Presence rows keyed by user_id, held in immutable state — each
-  // update replaces the Map so React renders and the derived getters
-  // recompute. No ref/version dance needed.
   const [rows, setRows] = useState<PresenceMap>(() => new Map());
-
-  // `now` ticks so derivePresence re-evaluates staleness over time.
   const [now, setNow] = useState(() => Date.now());
 
   const active = enabled && !!accountId;
@@ -61,96 +64,36 @@ export function usePresence(enabled = true): UsePresenceResult {
     const supabase = createClient();
     let cancelled = false;
 
-    const applyRow = (row: {
-      user_id: string;
-      status: StoredPresence;
-      last_seen_at: string;
-    }) => {
-      setRows((prev) => {
-        const next = new Map(prev);
-        next.set(row.user_id, {
-          status: row.status,
-          last_seen_at: row.last_seen_at,
+    const refetch = async () => {
+      const { data, error } = await supabase
+        .from("member_presence")
+        .select("user_id, status, last_seen_at, viewing_conversation_id")
+        .eq("account_id", accountId);
+      if (cancelled) return;
+      if (error) {
+        console.error("[usePresence] refetch error:", error.message);
+        return;
+      }
+      const next: PresenceMap = new Map();
+      for (const r of data ?? []) {
+        next.set(r.user_id as string, {
+          status: r.status,
+          last_seen_at: r.last_seen_at,
+          viewing_conversation_id: r.viewing_conversation_id ?? null,
         });
-        return next;
-      });
+      }
+      setRows(next);
     };
 
-    // Subscribe FIRST, then snapshot. The snapshot MERGES into whatever
-    // Realtime has already delivered (keeping the newer last_seen_at)
-    // rather than replacing the map — so an event that lands while the
-    // fetch is in flight isn't clobbered by a staler snapshot row.
-    const channel: RealtimeChannel = supabase
-      .channel(`presence:${accountId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "member_presence",
-          filter: `account_id=eq.${accountId}`,
-        },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const old = payload.old as { user_id?: string };
-            if (!old.user_id) return;
-            setRows((prev) => {
-              if (!prev.has(old.user_id!)) return prev;
-              const next = new Map(prev);
-              next.delete(old.user_id!);
-              return next;
-            });
-            return;
-          }
-          applyRow(
-            payload.new as {
-              user_id: string;
-              status: StoredPresence;
-              last_seen_at: string;
-            },
-          );
-        },
-      )
-      .subscribe();
-
-    supabase
-      .from("member_presence")
-      .select("user_id, status, last_seen_at")
-      .eq("account_id", accountId)
-      .then(({ data, error }) => {
-        if (cancelled) return;
-        if (error) {
-          console.error("[usePresence] initial fetch error:", error.message);
-          return;
-        }
-        setRows((prev) => {
-          const next = new Map(prev);
-          for (const r of data ?? []) {
-            const userId = r.user_id as string;
-            const incoming: PresenceRow = {
-              status: r.status as StoredPresence,
-              last_seen_at: r.last_seen_at as string,
-            };
-            const existing = next.get(userId);
-            // A live event that arrived first must win over a staler
-            // snapshot row.
-            if (
-              !existing ||
-              new Date(incoming.last_seen_at) >= new Date(existing.last_seen_at)
-            ) {
-              next.set(userId, incoming);
-            }
-          }
-          return next;
-        });
-      });
-
-    const tick = setInterval(() => setNow(Date.now()), RE_DERIVE_MS);
+    void refetch();
+    const interval = setInterval(() => {
+      void refetch();
+      setNow(Date.now());
+    }, POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      clearInterval(tick);
-      supabase.removeChannel(channel);
+      clearInterval(interval);
     };
   }, [active, accountId]);
 
@@ -167,5 +110,17 @@ export function usePresence(enabled = true): UsePresenceResult {
     [rows, now],
   );
 
-  return { getPresence, getRow, now };
+  const getViewers = useCallback(
+    (conversationId: string, excludeUserId?: string | null): string[] => {
+      const viewers: string[] = [];
+      for (const [userId, row] of rows) {
+        if (userId === excludeUserId) continue;
+        if (isActivelyViewing(row, conversationId, now)) viewers.push(userId);
+      }
+      return viewers;
+    },
+    [rows, now],
+  );
+
+  return { getPresence, getRow, getViewers, now };
 }
