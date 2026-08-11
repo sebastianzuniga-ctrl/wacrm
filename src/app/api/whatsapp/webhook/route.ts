@@ -8,6 +8,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { resolvePatientForContact } from '@/lib/ino/resolve-patient'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { dispatchBroadcastReplyRule } from '@/lib/whatsapp/broadcast-reply-rules'
 import { isOptOutPhrase, markContactDoNotDisturb } from '@/lib/whatsapp/dnd'
@@ -648,6 +649,27 @@ async function processMessage(
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
+  // Si nunca se intento resolver este contacto contra INO, hacerlo
+  // ahora, ANTES de seguir -- garantiza que el nombre real del
+  // paciente (si existe) quede guardado desde el primer mensaje, y
+  // que el proveedor de IA (n8n) reciba un mensaje sobre un contacto
+  // ya identificado en vez de tener que resolverlo el mismo. Ver
+  // src/lib/ino/resolve-patient.ts (reintenta ante fallos de red,
+  // sincroniza tambien con la base de n8n).
+  if (!contactRecord.pac_lookup_checked_at) {
+    try {
+      const resolution = await resolvePatientForContact(senderPhone, contactRecord.id)
+      if (resolution.outcome === 'single' && resolution.pacientes?.[0]) {
+        const p = resolution.pacientes[0]
+        contactRecord.name = `${p.pac_nombre} ${p.pac_apellido}`.trim()
+        contactRecord.pac_codigo = p.pac_codigo
+        contactRecord.es_paciente_ino = true
+      }
+    } catch (err) {
+      console.error('[webhook] resolvePatientForContact failed:', err)
+    }
+  }
+
   // Find or create conversation
   const convResult = await findOrCreateConversation(
     accountId,
@@ -1146,8 +1168,12 @@ async function findOrCreateContact(
   )
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
+    // Update name if it changed -- pero NUNCA si ya resolvimos un
+    // nombre real de paciente contra INO (es_paciente_ino=true), o el
+    // nombre de perfil de WhatsApp lo pisaria de vuelta en cada
+    // mensaje siguiente. Ver src/lib/ino/resolve-patient.ts.
+    const hasResolvedPatientName = existingContact.es_paciente_ino === true
+    if (name && name !== existingContact.name && !hasResolvedPatientName) {
       await supabaseAdmin()
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
