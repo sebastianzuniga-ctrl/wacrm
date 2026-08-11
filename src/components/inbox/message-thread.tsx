@@ -639,6 +639,18 @@ export function MessageThread({
         .eq("id", conversation.id);
 
       onStatusChange(conversation.id, status);
+
+      // Encuesta de satisfacción: solo en cierre MANUAL (este handler),
+      // nunca en auto-cierres (cron 24h, webhook stale-session). El
+      // endpoint mismo revisa si la feature está habilitada y si ya se
+      // mandó antes - fire-and-forget, no bloquea el cambio de status.
+      if (status === "closed") {
+        fetch(`/api/conversations/${conversation.id}/send-survey`, {
+          method: "POST",
+        }).catch((err) => {
+          console.error("Failed to trigger satisfaction survey:", err);
+        });
+      }
     },
     [conversation, onStatusChange]
   );

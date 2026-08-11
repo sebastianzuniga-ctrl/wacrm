@@ -733,6 +733,34 @@ async function processMessage(
     console.error('Error updating conversation:', convError)
   }
 
+  // Respuesta a la encuesta de satisfacción (lista 1-5, ids
+  // survey_rating_1..5 - ver /api/conversations/[id]/send-survey).
+  // Se corta el flujo aquí: una calificación no debe disparar
+  // reply-rules de broadcast, flows, ni la IA.
+  if (interactiveReplyId?.startsWith('survey_rating_')) {
+    const rating = parseInt(interactiveReplyId.replace('survey_rating_', ''), 10)
+    if (rating >= 1 && rating <= 5) {
+      const { data: pendingSurvey } = await supabaseAdmin()
+        .from('satisfaction_surveys')
+        .select('id')
+        .eq('contact_id', contactRecord.id)
+        .is('responded_at', null)
+        .order('sent_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (pendingSurvey) {
+        const { error: surveyErr } = await supabaseAdmin()
+          .from('satisfaction_surveys')
+          .update({ rating, responded_at: new Date().toISOString() })
+          .eq('id', pendingSurvey.id)
+        if (surveyErr) {
+          console.error('[webhook] failed to record satisfaction rating:', surveyErr)
+        }
+      }
+    }
+    return
+  }
+
   // Ley No Molestar / SERNAC: si el contacto escribe la frase explicita de
   // opt-out (NO basta con presionar el boton "NO" de una plantilla), se
   // marca do_not_disturb y se corta el flujo aqui -- no sigue a flows,
