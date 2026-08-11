@@ -367,16 +367,24 @@ export async function POST(request: Request) {
     }
 
     if (existing) {
-      const { error: updateError } = await supabase
+      const { data: updatedRows, error: updateError } = await supabase
         .from('whatsapp_config')
         .update(baseRow)
         .eq('account_id', accountId)
+        .select('account_id')
 
       if (updateError) {
         console.error('Error updating whatsapp_config:', updateError)
         return NextResponse.json(
           { error: 'Failed to update configuration' },
           { status: 500 }
+        )
+      }
+      if (!updatedRows || updatedRows.length === 0) {
+        console.error('whatsapp_config update affected 0 rows (likely RLS blocked it) for account', accountId)
+        return NextResponse.json(
+          { error: 'No se pudo guardar: no tienes permisos suficientes para modificar esta configuracion.' },
+          { status: 403 }
         )
       }
     } else {
