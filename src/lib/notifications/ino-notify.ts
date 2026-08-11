@@ -5,7 +5,7 @@
 // ============================================================
 
 const INO_NOTIFY_URL = 'http://sistema.ino.cl/DentWeb12/dent/rest/insNotificacion.jsp';
-const INO_NOTIFY_TOKEN = '987654321';
+const INO_NOTIFY_TOKEN = process.env.INO_NOTIFY_TOKEN ?? '';
 
 export async function sendInoEmail(destinatario: string, asunto: string, mensaje: string): Promise<boolean> {
   const params = new URLSearchParams({

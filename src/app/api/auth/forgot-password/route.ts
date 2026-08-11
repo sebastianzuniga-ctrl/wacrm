@@ -24,7 +24,7 @@ import { createClient } from '@supabase/supabase-js';
 const APP_URL = 'https://wspcrm.ino.cl';
 
 const INO_NOTIFY_URL = 'http://sistema.ino.cl/DentWeb12/dent/rest/insNotificacion.jsp';
-const INO_NOTIFY_TOKEN = '987654321';
+const INO_NOTIFY_TOKEN = process.env.INO_NOTIFY_TOKEN ?? '';
 
 function supabaseAdmin() {
   return createClient(
