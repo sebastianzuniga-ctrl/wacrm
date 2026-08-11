@@ -285,6 +285,12 @@ export interface WhatsAppConfig {
   subscribed_apps_at?: string;
   /** Last error from /register; cleared on success. */
   last_registration_error?: string;
+  /**
+   * If false, the webhook accepts payloads without validating Meta's
+   * HMAC signature. Security debt — see whatsapp_config migration
+   * 049_webhook_hmac_toggle.sql for context. Defaults to true.
+   */
+  webhook_hmac_enabled: boolean;
 }
 
 // Raw Meta status enum. We persist this verbatim from Meta (sync + webhook)

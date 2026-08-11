@@ -181,6 +181,39 @@ export async function GET(request: Request) {
   }
 }
 
+// Pulls the first phone_number_id present in the payload so we can
+// look up which account's config governs this request BEFORE deciding
+// whether to enforce HMAC validation. Returns null if none is found
+// (e.g. a template-lifecycle event, or a malformed payload).
+function extractPhoneNumberId(body: { entry?: WhatsAppWebhookEntry[] }): string | null {
+  for (const entry of body.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const id = change.value?.metadata?.phone_number_id
+      if (id) return id
+    }
+  }
+  return null
+}
+
+// HMAC validation is configurable per WhatsApp number
+// (whatsapp_config.webhook_hmac_enabled) so it can be disabled
+// temporarily when a trusted intermediary re-serializes the JSON and
+// can't reproduce Meta's original signature (see wacrm_add4.md/add5.md
+// — the n8n forwarding workaround). Defaults to REQUIRING a valid
+// signature (safe default) when the phone_number_id can't be resolved
+// or the config lookup fails, so an unrecognized payload can't bypass
+// validation by omission.
+async function isHmacEnabledForPhoneNumberId(phoneNumberId: string | null): Promise<boolean> {
+  if (!phoneNumberId) return true
+  const { data, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('webhook_hmac_enabled')
+    .eq('phone_number_id', phoneNumberId)
+    .maybeSingle()
+  if (error || !data) return true
+  return data.webhook_hmac_enabled ?? true
+}
+
 // POST - Receive messages
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
@@ -188,19 +221,22 @@ export async function POST(request: Request) {
   const rawBody = await request.text()
   const signature = request.headers.get('x-hub-signature-256')
 
-  if (false && !verifyMetaWebhookSignature(rawBody, signature)) { // TEMP: HMAC disabled 2026-08-07, ver pendiente n8n forward
-    // 401 (not 200) — we want Meta's delivery dashboard to show failures
-    // loudly if a misconfiguration causes signatures to stop matching,
-    // rather than silently eating events.
-    console.warn('[webhook] rejected request with invalid signature')
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-  }
-
   let body: { entry?: WhatsAppWebhookEntry[] }
   try {
     body = JSON.parse(rawBody)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  const phoneNumberId = extractPhoneNumberId(body)
+  const hmacEnabled = await isHmacEnabledForPhoneNumberId(phoneNumberId)
+
+  if (hmacEnabled && !verifyMetaWebhookSignature(rawBody, signature)) {
+    // 401 (not 200) — we want Meta's delivery dashboard to show failures
+    // loudly if a misconfiguration causes signatures to stop matching,
+    // rather than silently eating events.
+    console.warn('[webhook] rejected request with invalid signature')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
   }
 
   // Process AFTER the response so we ack Meta within their ~20s timeout

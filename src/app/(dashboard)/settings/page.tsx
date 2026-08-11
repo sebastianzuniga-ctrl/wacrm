@@ -18,6 +18,7 @@ import { BroadcastPacingSettings } from '@/components/settings/broadcast-pacing-
 import { TicketAlertsSettings } from '@/components/settings/ticket-alerts-settings';
 import { BusinessHoursSettings } from '@/components/settings/business-hours-settings';
 import { SatisfactionSurveySettings } from '@/components/settings/satisfaction-survey-settings';
+import { WebhookHmacToggleSettings } from '@/components/settings/webhook-hmac-toggle-settings';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
@@ -87,6 +88,7 @@ function SettingsPageInner() {
         <TicketAlertsSettings />
         <BusinessHoursSettings />
         <SatisfactionSurveySettings />
+        <WebhookHmacToggleSettings />
       </>
     ),
     templates: <TemplateManager />,
