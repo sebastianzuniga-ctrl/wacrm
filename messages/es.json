@@ -26,6 +26,7 @@
     "campaignRules": "Reglas de campaña",
     "noMolestar": "No Molestar",
     "historial": "Historial y Estadísticas",
+    "sesionesIno": "Sesiones INO",
     "automations": "Automatizaciones",
     "flows": "Flujos",
     "aiAgents": "Agentes de IA",
@@ -137,9 +138,9 @@
       "searchPlaceholder": "Buscar conversaciones...",
       "filterAll": "Todas",
       "filterUnread": "Sin leer",
-      "filterOpen": "Abiertas",
-      "filterPending": "Pendientes",
-      "filterClosed": "Cerradas",
+      "filterOpenMine": "Abiertas por mí",
+      "filterPendingMine": "Pendientes por mí",
+      "filterClosedMine": "Cerradas por mí",
       "filterAssignedToMe": "Asignados a mí",
       "tags": "Etiquetas",
       "company": "Empresa",
@@ -147,7 +148,11 @@
       "clearAll": "Limpiar todo",
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",
-      "unknown": "Desconocido"
+      "unknown": "Desconocido",
+      "dateFilterToday": "Hoy",
+      "dateFilter3d": "Últimos 3 días",
+      "dateFilter7d": "Últimos 7 días",
+      "dateFilterAll": "Todas las fechas"
     },
     "messageThread": {
       "backToConversations": "Volver a conversaciones",

@@ -45,7 +45,9 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread" | "assigned";
+type InboxFilter = "all" | "unread" | "assigned" | "openMine" | "pendingMine" | "closedMine";
+
+type DateFilter = "today" | "3d" | "7d" | "all";
 
 export function ConversationList({
   activeConversationId,
@@ -61,13 +63,21 @@ export function ConversationList({
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
     { label: t("filterAssignedToMe"), value: "assigned" },
-    { label: t("filterOpen"), value: "open" },
-    { label: t("filterPending"), value: "pending" },
-    { label: t("filterClosed"), value: "closed" },
+    { label: t("filterOpenMine"), value: "openMine" },
+    { label: t("filterPendingMine"), value: "pendingMine" },
+    { label: t("filterClosedMine"), value: "closedMine" },
+  ], [t]);
+
+  const DATE_FILTER_OPTIONS: { label: string; value: DateFilter }[] = useMemo(() => [
+    { label: t("dateFilterToday"), value: "today" },
+    { label: t("dateFilter3d"), value: "3d" },
+    { label: t("dateFilter7d"), value: "7d" },
+    { label: t("dateFilterAll"), value: "all" },
   ], [t]);
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<InboxFilter>("all");
+  const [filter, setFilter] = useState<InboxFilter>("assigned");
+  const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -168,8 +178,33 @@ export function ConversationList({
       result = result.filter((c) => c.unread_count > 0);
     } else if (filter === "assigned") {
       result = result.filter((c) => c.assigned_agent_id === user?.id);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.status === filter);
+    } else if (filter === "openMine") {
+      result = result.filter((c) => c.status === "open" && c.assigned_agent_id === user?.id);
+    } else if (filter === "pendingMine") {
+      result = result.filter((c) => c.status === "pending" && c.assigned_agent_id === user?.id);
+    } else if (filter === "closedMine") {
+      result = result.filter((c) => c.status === "closed" && c.assigned_agent_id === user?.id);
+    }
+
+    // Filtro de fecha: por defecto "hoy" para no saturar la lista con
+    // meses de historial (pedido explicito del usuario). Usa
+    // last_message_at (actividad mas reciente), con fallback a
+    // created_at para tickets sin mensajes todavia.
+    if (dateFilter !== "all") {
+      const now = new Date();
+      let cutoff: number;
+      if (dateFilter === "today") {
+        cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      } else if (dateFilter === "3d") {
+        cutoff = now.getTime() - 3 * 24 * 60 * 60 * 1000;
+      } else {
+        cutoff = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+      }
+      result = result.filter((c) => {
+        const ts = c.last_message_at ?? c.created_at;
+        if (!ts) return false;
+        return new Date(ts).getTime() >= cutoff;
+      });
     }
 
     // Contact-based filters (tags via OR logic, exact company match).
@@ -193,7 +228,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, user?.id]);
+  }, [conversations, filter, dateFilter, search, selectedTagIds, selectedCompany, user?.id]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -223,6 +258,7 @@ export function ConversationList({
   );
 
   const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
+  const activeDateFilter = DATE_FILTER_OPTIONS.find((o) => o.value === dateFilter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -260,6 +296,31 @@ export function ConversationList({
                     filter === opt.value
                       ? "text-primary"
                       : "text-popover-foreground"
+                  )}
+                >
+                  {opt.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              className={cn(
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                dateFilter !== "all" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {activeDateFilter?.label ?? t("dateFilterToday")}
+              <ChevronDown className="h-3 w-3" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="border-border bg-popover">
+              {DATE_FILTER_OPTIONS.map((opt) => (
+                <DropdownMenuItem
+                  key={opt.value}
+                  onClick={() => setDateFilter(opt.value)}
+                  className={cn(
+                    "text-sm",
+                    dateFilter === opt.value ? "text-primary" : "text-popover-foreground"
                   )}
                 >
                   {opt.label}
