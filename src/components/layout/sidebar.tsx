@@ -30,6 +30,7 @@ import {
   X,
   Zap,
   History,
+  Database,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 import { hasMinRole } from "@/lib/auth/roles";
@@ -111,6 +112,7 @@ const navItems: NavItem[] = [
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true, minRole: "admin" },
   { href: "/agents", labelKey: "aiAgents", icon: Bot, minRole: "admin" },
   { href: "/historial", labelKey: "historial", icon: History, minRole: "admin" },
+  { href: "/sesiones-ino", labelKey: "sesionesIno", icon: Database, minRole: "admin" },
 ];
 
 const bottomNavItems = [

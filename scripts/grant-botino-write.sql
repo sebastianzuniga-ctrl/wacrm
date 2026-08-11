@@ -1,0 +1,34 @@
+-- ============================================================
+-- grant-botino-write.sql
+--
+-- Amplía los permisos del rol wacrm_readonly (creado en la sesión de
+-- add2.md, GRANT SELECT solamente sobre sesiones/contacts de
+-- botino_analytics) para permitir tambien INSERT/UPDATE/DELETE sobre
+-- `sesiones`.
+--
+-- CAMBIO DE DISEÑO IMPORTANTE: hasta ahora, "n8n es el unico dueño
+-- de esta data, wacrm nunca escribe aca" era una regla explicita
+-- (ver wacrm_add2.md). Se relaja a proposito para dar a los admins
+-- de wacrm una pantalla donde puedan corregir manualmente sesiones
+-- atascadas (ej. el bug de '¿Es Conocido?' referenciando el $json
+-- equivocado, que dejaba pacientes ya encontrados con
+-- pac_codigo='ESPERANDO_RUT'). El nombre del rol se deja igual
+-- (wacrm_readonly) para no romper INO_SESSIONS_DB_URL en .env -- ya
+-- no es 100% preciso, pero renombrarlo es mas riesgo que beneficio.
+--
+-- No se toca `contacts` -- sigue siendo solo lectura, el problema
+-- concreto que se esta resolviendo es unicamente sobre `sesiones`.
+--
+-- NO es parte del sistema de migraciones de wacrm (supabase/migrations/
+-- -- esta DB (botino_analytics) es una base Postgres nativa aparte,
+-- fuera de Supabase). Correr manualmente contra esa base si se
+-- necesita reaplicar en otro ambiente.
+-- ============================================================
+GRANT INSERT, UPDATE, DELETE ON sesiones TO wacrm_readonly;
+
+-- Ampliación 2026-08-11: wacrm ahora resuelve el paciente al llegar
+-- el PRIMER mensaje de un número (antes de mandarlo a n8n), y
+-- sincroniza el resultado también en botino_analytics.contacts para
+-- que n8n no repita la misma consulta a INO. Ver
+-- src/lib/ino/resolve-patient.ts.
+GRANT INSERT, UPDATE ON contacts TO wacrm_readonly;

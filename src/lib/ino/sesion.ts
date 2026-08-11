@@ -18,7 +18,7 @@ import { Pool } from 'pg';
 
 let pool: Pool | null = null;
 
-function getPool(): Pool | null {
+export function getPool(): Pool | null {
   if (!process.env.INO_SESSIONS_DB_URL) return null;
   if (!pool) {
     pool = new Pool({
@@ -153,5 +153,103 @@ export async function getFichaActivaByPhone(waId: string): Promise<FichaActiva |
   } catch (err) {
     console.error('[ino/sesion] query failed:', err instanceof Error ? err.message : err);
     return null;
+  }
+}
+
+// ============================================================
+// Administración manual de sesiones (escritura) — CRUD para la
+// pantalla de Configuración → Sesiones INO. A diferencia del resto
+// de este archivo (solo lectura), estas funciones SÍ escriben en
+// botino_analytics. Requiere que wacrm_readonly tenga GRANT
+// INSERT/UPDATE/DELETE en `sesiones` (ver scripts/grant-botino-write.sql
+// -- el nombre del rol quedó igual por compatibilidad con
+// INO_SESSIONS_DB_URL, aunque ya no es 100% "solo lectura").
+// ============================================================
+
+export interface SesionRow {
+  wa_id: string;
+  pac_codigo: string | null;
+  pac_nombre: string | null;
+  pac_apellido: string | null;
+  pacientes_lista: string | null;
+  historial: string | null;
+  updated_at: string;
+}
+
+/**
+ * Lista sesiones, más recientes primero. `search` filtra (ILIKE) por
+ * wa_id, nombre, apellido, o pac_codigo -- suficiente para encontrar
+ * un número puntual sin tener que abrir psql.
+ */
+export async function listSesiones(search?: string, limit = 100): Promise<SesionRow[]> {
+  const db = getPool();
+  if (!db) return [];
+  try {
+    if (search && search.trim()) {
+      const like = `%${search.trim()}%`;
+      const res = await db.query<SesionRow>(
+        `SELECT wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, historial, updated_at
+         FROM sesiones
+         WHERE wa_id ILIKE $1 OR pac_nombre ILIKE $1 OR pac_apellido ILIKE $1 OR pac_codigo ILIKE $1
+         ORDER BY updated_at DESC LIMIT $2`,
+        [like, limit]
+      );
+      return res.rows;
+    }
+    const res = await db.query<SesionRow>(
+      `SELECT wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, historial, updated_at
+       FROM sesiones ORDER BY updated_at DESC LIMIT $1`,
+      [limit]
+    );
+    return res.rows;
+  } catch (err) {
+    console.error('[ino/sesion] listSesiones failed:', err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+export interface UpdateSesionInput {
+  pac_codigo: string | null;
+  pac_nombre: string | null;
+  pac_apellido: string | null;
+  pacientes_lista: string | null;
+}
+
+/**
+ * Upsert: crea la fila si wa_id no existe todavia (caso de un
+ * numero nuevo que el bot no ha visto, ej. paciente que escribio
+ * pero nunca completo el flujo), o actualiza si ya existe.
+ */
+export async function updateSesion(waId: string, input: UpdateSesionInput): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+  try {
+    await db.query(
+      `INSERT INTO sesiones (wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (wa_id) DO UPDATE SET
+         pac_codigo = EXCLUDED.pac_codigo,
+         pac_nombre = EXCLUDED.pac_nombre,
+         pac_apellido = EXCLUDED.pac_apellido,
+         pacientes_lista = EXCLUDED.pacientes_lista,
+         updated_at = NOW()`,
+      [waId, input.pac_codigo, input.pac_nombre, input.pac_apellido, input.pacientes_lista]
+    );
+    return true;
+  } catch (err) {
+    console.error('[ino/sesion] updateSesion failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+export async function deleteSesion(waId: string): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+  try {
+    await db.query(`DELETE FROM sesiones WHERE wa_id = $1`, [waId]);
+    return true;
+  } catch (err) {
+    console.error('[ino/sesion] deleteSesion failed:', err instanceof Error ? err.message : err);
+    return false;
   }
 }
