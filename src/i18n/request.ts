@@ -1,17 +1,15 @@
 import { getRequestConfig } from 'next-intl/server';
+import messages from '../../messages/es.json';
 
+// La app opera exclusivamente en español -- se eliminaron en.json y
+// ko.json (nunca se usaron: no hay selector de idioma en la UI, y
+// NEXT_PUBLIC_APP_LOCALE siempre fue 'es'). Import estatico directo
+// en vez del dinamico `../../messages/${locale}.json` de antes --
+// mas simple, y evita que el bundler intente resolver archivos que
+// ya no existen.
 export default getRequestConfig(async () => {
-  // Read the locale from the environment, defaulting to 'es' (INO opera en español)
-  const locale = process.env.NEXT_PUBLIC_APP_LOCALE || 'es';
-  let messages;
-  try {
-    messages = (await import(`../../messages/${locale}.json`)).default;
-  } catch (error) {
-    // Fallback to Spanish if the dictionary for the requested locale doesn't exist yet
-    messages = (await import(`../../messages/es.json`)).default;
-  }
   return {
-    locale,
-    messages
+    locale: 'es',
+    messages,
   };
 });
