@@ -56,14 +56,17 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
   const [addingNote, setAddingNote] = useState(false);
   const [ficha, setFicha] = useState<FichaInfo | null>(null);
   const [citas, setCitas] = useState<CitaAgenda[]>([]);
+  const [ticketCount, setTicketCount] = useState<number | null>(null);
 
   const fetchContactData = useCallback(async () => {
     if (!contact) return;
 
     const supabase = createClient();
 
-    // Fetch deals, notes, and tags in parallel
-    const [dealsRes, notesRes, tagsRes] = await Promise.all([
+    // Fetch deals, notes, tags, and total ticket count in parallel.
+    // The count gives a quick "es la 3ra vez que escribe" signal to the
+    // agent without needing to open /historial (admin-only).
+    const [dealsRes, notesRes, tagsRes, ticketCountRes] = await Promise.all([
       supabase
         .from("deals")
         .select("*, stage:pipeline_stages(*)")
@@ -78,10 +81,15 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         .from("contact_tags")
         .select("id, tag_id, tags(*)")
         .eq("contact_id", contact.id),
+      supabase
+        .from("conversations")
+        .select("*", { count: "exact", head: true })
+        .eq("contact_id", contact.id),
     ]);
 
     if (dealsRes.data) setDeals(dealsRes.data);
     if (notesRes.data) setNotes(notesRes.data);
+    setTicketCount(ticketCountRes.count ?? null);
     if (tagsRes.data) {
       const mapped = tagsRes.data
         .filter((ct: Record<string, unknown>) => ct.tags)
@@ -202,6 +210,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             </h3>
             {contact.company && (
               <p className="text-xs text-muted-foreground">{contact.company}</p>
+            )}
+            {ticketCount !== null && ticketCount > 1 && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                {ticketCount}ª vez que escribe
+              </p>
             )}
           </div>
 
