@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Sparkles, Hand, Undo2, Loader2, UserCheck } from "lucide-react";
+import { Sparkles, Hand, Undo2, Loader2, UserCheck, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -86,6 +86,7 @@ export function AiThreadBanner({
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
   const [claiming, setClaiming] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   // Optimistic local mirror of the pause flag so the banner flips
   // instantly on click; re-seeds whenever the thread (or its server
   // state via realtime) changes.
@@ -167,6 +168,32 @@ export function AiThreadBanner({
     }
   }, [conversationId, currentUserId, onChange, t]);
 
+  // "Liberar conversación" -- devuelve un ticket que ya es mio a la
+  // cola sin asignar, para que otro ejecutivo lo tome. Distinto de
+  // "Reanudar IA": el bot sigue pausado, solo cambia el dueño.
+  const release = useCallback(async () => {
+    setReleasing(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversationId}/release`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j?.error ?? t("releaseError"));
+        return;
+      }
+      onChange?.({
+        ai_autoreply_disabled: true,
+        assigned_agent_id: null,
+      });
+      toast.success(t("released"));
+    } catch {
+      toast.error(t("networkError"));
+    } finally {
+      setReleasing(false);
+    }
+  }, [conversationId, onChange, t]);
+
   // Nobody owns this thread yet — always offer a way to grab it, whether
   // the bot is actively replying, paused after a handoff, or there's no
   // AI configured for the account at all. This is the one case that must
@@ -218,12 +245,16 @@ export function AiThreadBanner({
     );
   }
 
-  // From here on the thread has an owner — only the AI-status banner
-  // (if any) is left to show.
-  if (!autoReplyOn) return null;
+  // From here on the thread has an owner. If it's the acting agent's
+  // own ticket, always offer a way to release it back to the queue --
+  // independent of AI status, since an agent might want to hand off a
+  // ticket they're already chatting in normally (no bot involved at
+  // all), not just a paused-bot handoff.
+  const isMine = !!currentUserId && assignedAgentId === currentUserId;
 
-  // Paused here (the model handed off, and someone already claimed it).
-  if (paused) {
+  if (paused && isMine) {
+    // Paused here (the model handed off, and this agent claimed it) --
+    // offer both "Reanudar IA" and "Liberar conversación".
     return (
       <Banner tone="muted">
         <div className="min-w-0 flex-1">
@@ -235,15 +266,56 @@ export function AiThreadBanner({
           )}
         </div>
         {canAct && (
-          <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
-            {t("resume")}
-          </BannerButton>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <BannerButton onClick={release} busy={releasing} icon={LogOut}>
+              {t("release")}
+            </BannerButton>
+            {autoReplyOn && (
+              <BannerButton onClick={() => toggle(false)} busy={busy} icon={Undo2}>
+                {t("resume")}
+              </BannerButton>
+            )}
+          </div>
         )}
       </Banner>
     );
   }
 
-  // Active, but a human already owns it → the bot won't fire; no banner.
+  if (paused) {
+    // Paused, but owned by someone else -- nothing for this agent to do.
+    if (!autoReplyOn) return null;
+    return (
+      <Banner tone="muted">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">{t("pausedTitle")}</p>
+          {handoffSummary && (
+            <p className="truncate text-muted-foreground" title={handoffSummary}>
+              {handoffSummary}
+            </p>
+          )}
+        </div>
+      </Banner>
+    );
+  }
+
+  // Not paused. If it's mine (chatting normally, bot inactive on this
+  // thread either way), still offer "Liberar conversación" so an agent
+  // can hand off a ticket they no longer want, even without any AI
+  // pause involved.
+  if (isMine && canAct) {
+    return (
+      <Banner tone="muted">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-foreground">{t("assignedToYouTitle")}</p>
+        </div>
+        <BannerButton onClick={release} busy={releasing} icon={LogOut}>
+          {t("release")}
+        </BannerButton>
+      </Banner>
+    );
+  }
+
+  // Active, owned by someone else → the bot won't fire; no banner.
   return null;
 }
 

@@ -282,15 +282,19 @@
       "pausedTitle": "AI assistant is paused here",
       "unclaimedTitle": "Nobody has claimed this conversation yet",
       "activeText": "AI assistant is replying automatically",
-      "takeOver": "Take over",
+      "takeOver": "Pause AI and take over",
       "resume": "Resume AI",
+      "release": "Release conversation",
       "claim": "Claim conversation",
       "claimed": "Conversation claimed.",
       "claimError": "Couldn’t claim this conversation.",
+      "released": "Conversation released.",
+      "releaseError": "Couldn't release this conversation.",
       "tookOver": "You’ve taken over this chat.",
       "resumed": "AI resumed.",
       "updateError": "Couldn’t update the AI assistant.",
-      "networkError": "Couldn’t reach the server."
+      "networkError": "Couldn’t reach the server.",
+      "assignedToYouTitle": "This conversation is assigned to you"
     }
   },
   "Contacts": {
@@ -1526,7 +1530,7 @@
       "deals": "Deals & currency",
       "members": "Team members",
       "api": "API keys",
-    "ino-queries": "Querys"
+      "ino-queries": "Querys"
     },
     "groups": {
       "account": "Account",

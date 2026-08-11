@@ -282,15 +282,19 @@
       "pausedTitle": "El asistente de IA está pausado aquí",
       "unclaimedTitle": "Nadie ha tomado esta conversación todavía",
       "activeText": "El asistente de IA está respondiendo automáticamente",
-      "takeOver": "Tomar el control",
+      "takeOver": "Pausar IA y atender yo",
       "resume": "Reanudar IA",
+      "release": "Liberar conversación",
       "claim": "Tomar conversación",
       "claimed": "Conversación tomada.",
       "claimError": "No se pudo tomar esta conversación.",
+      "released": "Conversación liberada.",
+      "releaseError": "No se pudo liberar esta conversación.",
       "tookOver": "Has tomado el control de este chat.",
       "resumed": "IA reanudada.",
       "updateError": "No se pudo actualizar el asistente de IA.",
-      "networkError": "No se pudo conectar con el servidor."
+      "networkError": "No se pudo conectar con el servidor.",
+      "assignedToYouTitle": "Esta conversación está asignada a ti"
     }
   },
   "Contacts": {
@@ -1526,7 +1530,7 @@
       "deals": "Negocios y moneda",
       "members": "Miembros del equipo",
       "api": "Claves de API",
-    "ino-queries": "Querys"
+      "ino-queries": "Querys"
     },
     "groups": {
       "account": "Cuenta",

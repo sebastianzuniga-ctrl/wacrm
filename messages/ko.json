@@ -282,15 +282,19 @@
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
       "unclaimedTitle": "아직 아무도 이 대화를 맡지 않았습니다",
       "activeText": "AI 어시스턴트가 자동으로 응답 중입니다",
-      "takeOver": "직접 처리",
+      "takeOver": "AI 일시중지 후 직접 처리",
       "resume": "AI 재개",
+      "release": "대화 반환",
       "claim": "대화 맡기",
       "claimed": "대화를 맡았습니다.",
       "claimError": "이 대화를 맡을 수 없습니다.",
+      "released": "대화를 반환했습니다.",
+      "releaseError": "이 대화를 반환할 수 없습니다.",
       "tookOver": "이 대화를 직접 처리하기 시작했습니다.",
       "resumed": "AI가 재개되었습니다.",
       "updateError": "AI 어시스턴트를 업데이트하지 못했습니다.",
-      "networkError": "서버에 연결할 수 없습니다."
+      "networkError": "서버에 연결할 수 없습니다.",
+      "assignedToYouTitle": "이 대화는 당신에게 배정되었습니다"
     }
   },
   "Contacts": {
@@ -1513,7 +1517,7 @@
       "deals": "딜 & 통화",
       "members": "팀원",
       "api": "API 키",
-    "ino-queries": "Querys"
+      "ino-queries": "Querys"
     },
     "groups": {
       "account": "계정",
