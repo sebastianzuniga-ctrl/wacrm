@@ -253,10 +253,18 @@ export function MessageComposer({
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      // Atajo tipo Slack/Discord: si el composer esta vacio y la
+      // persona escribe "/", se abre el picker de respuestas rapidas
+      // en vez de dejar el caracter en el texto -- evita tener que
+      // pasar por el menu de tres puntos para algo tan frecuente.
+      if (e.target.value === "/" && text === "") {
+        setQuickReplyOpen(true);
+        return;
+      }
       setText(e.target.value);
       adjustHeight();
     },
-    [adjustHeight]
+    [adjustHeight, text]
   );
 
   // Ask the AI assistant for a suggested reply and drop it into the
