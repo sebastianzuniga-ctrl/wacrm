@@ -49,6 +49,16 @@ type InboxFilter = "all" | "unread" | "assigned" | "openMine" | "pendingMine" | 
 
 type DateFilter = "today" | "3d" | "7d" | "all";
 
+// Recuerda la ultima seleccion del agente para estos dos filtros entre
+// sesiones (device-scoped), mismo patron que el toggle del panel de
+// contacto en inbox/page.tsx -- sin esto, cada vez que el agente sale
+// y vuelve a entrar el inbox vuelve a "Asignados a mi" + "Hoy" aunque
+// haya estado trabajando con otro filtro.
+const FILTER_STORAGE_KEY = "wacrm:inbox:filter";
+const DATE_FILTER_STORAGE_KEY = "wacrm:inbox:date-filter";
+const FILTER_VALUES: InboxFilter[] = ["all", "unread", "assigned", "openMine", "pendingMine", "closedMine"];
+const DATE_FILTER_VALUES: DateFilter[] = ["today", "3d", "7d", "all"];
+
 export function ConversationList({
   activeConversationId,
   onSelect,
@@ -79,6 +89,44 @@ export function ConversationList({
   const [filter, setFilter] = useState<InboxFilter>("assigned");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
   const [loading, setLoading] = useState(true);
+
+  // Restaura la ultima seleccion del agente. Se hace en un efecto (no
+  // en el initializer de useState) para que el primer render coincida
+  // con el default del server y no genere un mismatch de hidratacion.
+  useEffect(() => {
+    try {
+      const storedFilter = localStorage.getItem(FILTER_STORAGE_KEY);
+      if (storedFilter && (FILTER_VALUES as string[]).includes(storedFilter)) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- restaura un valor guardado tras el mount, no un ciclo de sincronizacion
+        setFilter(storedFilter as InboxFilter);
+      }
+      const storedDateFilter = localStorage.getItem(DATE_FILTER_STORAGE_KEY);
+      if (storedDateFilter && (DATE_FILTER_VALUES as string[]).includes(storedDateFilter)) {
+        setDateFilter(storedDateFilter as DateFilter);
+      }
+    } catch {
+      // localStorage puede tirar error en modo incognito / contextos
+      // sandboxed -- si falla, simplemente se queda con los defaults.
+    }
+  }, []);
+
+  const handleFilterChange = useCallback((value: InboxFilter) => {
+    setFilter(value);
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, value);
+    } catch {
+      // Persistencia best-effort.
+    }
+  }, []);
+
+  const handleDateFilterChange = useCallback((value: DateFilter) => {
+    setDateFilter(value);
+    try {
+      localStorage.setItem(DATE_FILTER_STORAGE_KEY, value);
+    } catch {
+      // Persistencia best-effort.
+    }
+  }, []);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
   // Broadcast audience filtering. Company is an exact match on the field.
@@ -290,7 +338,7 @@ export function ConversationList({
               {FILTER_OPTIONS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
-                  onClick={() => setFilter(opt.value)}
+                  onClick={() => handleFilterChange(opt.value)}
                   className={cn(
                     "text-sm",
                     filter === opt.value
@@ -317,7 +365,7 @@ export function ConversationList({
               {DATE_FILTER_OPTIONS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
-                  onClick={() => setDateFilter(opt.value)}
+                  onClick={() => handleDateFilterChange(opt.value)}
                   className={cn(
                     "text-sm",
                     dateFilter === opt.value ? "text-primary" : "text-popover-foreground"

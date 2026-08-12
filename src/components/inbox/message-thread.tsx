@@ -137,6 +137,15 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
+// Muestra solo el primer nombre al asignar/mostrar el agente de un
+// ticket (pedido explicito: no nombre + apellido en el header del
+// inbox). El nombre completo sigue disponible en otros lados
+// (settings, lista de miembros) -- esto es solo cosmetico para el
+// contexto del chat.
+function firstName(fullName: string): string {
+  return fullName.trim().split(/\s+/)[0] || fullName;
+}
+
 const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
   { label: "Open", value: "open", color: "text-primary" },
   { label: "Pending", value: "pending", color: "text-amber-400" },
@@ -963,8 +972,23 @@ export function MessageThread({
     accountRole === "agent" && assignedAgentId !== (user?.id ?? null);
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
   const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? t("assigned"))
+    ? firstName(currentAssignee?.full_name ?? t("assigned"))
     : t("assign");
+  // Solo agentes (no admin/owner) son asignables a tickets -- el
+  // dropdown de reasignacion para admin/owner nunca debe listar otros
+  // admins/owners.
+  const assignableProfiles = profiles.filter((p) => p.account_role === "agent");
+  // Un agente no puede navegar la lista completa ni reasignar a otro
+  // agente -- solo puede "tomar" un ticket sin asignar (que pasa a
+  // mostrar su propio nombre) o ver a quien esta asignado, de forma
+  // no interactiva.
+  const isAgentRole = accountRole === "agent";
+  // Un ticket cerrado se bloquea para seguir conversando; solo
+  // admin/owner puede reabrirlo (revertir el estado). El agente que
+  // cerro no puede deshacerlo el mismo.
+  const canReopenClosed = accountRole === "admin" || accountRole === "owner";
+  const isClosed = conversation.status === "closed";
+  const statusLocked = isClosed && !canReopenClosed;
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1098,95 +1122,134 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
-          {/* Status dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
-                )}>
-                {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
-                >
-                  {t(`status${opt.label}`)}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Assign dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
+          {/* Status dropdown -- bloqueado (sin dropdown) si el ticket
+              esta cerrado y el rol actual no puede reabrirlo. */}
+          {statusLocked ? (
+            <span
               className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
+                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md",
+                currentStatus?.color ?? "text-muted-foreground"
               )}
+              title={t("statusLockedHint")}
             >
-              <UserPlus className="h-3 w-3" />
-              <span className="hidden sm:inline">{assignLabel}</span>
-              <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="border-border bg-popover"
-            >
-              {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  {t("noTeammates")}
-                </DropdownMenuItem>
-              ) : (
-                profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  const presence = getPresence(p.user_id);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn(
-                        "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
-                      )}
-                    >
-                      <PresenceDot
-                        status={presence}
-                        label={presenceLabel(
-                          presence,
-                          getRow(p.user_id)?.last_seen_at ?? null,
-                          now
-                        )}
-                        className="mr-2"
-                      />
-                      <span className="flex-1">
-                        {p.full_name}
-                        {p.user_id === user?.id ? t("me") : ""}
-                      </span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {assignedAgentId && (
-                <>
-                  <DropdownMenuSeparator className="bg-border" />
+              {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
+            </span>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger className={cn(
+                    "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                    currentStatus?.color ?? "text-muted-foreground"
+                  )}>
+                  {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
+                  <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="border-border bg-popover"
+              >
+                {STATUS_OPTIONS.map((opt) => (
                   <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
-                    className="text-sm text-muted-foreground"
+                    key={opt.value}
+                    onClick={() => handleStatusChange(opt.value)}
+                    className={cn("text-sm", opt.color)}
                   >
-                    {t("unassign")}
+                    {t(`status${opt.label}`)}
                   </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Assign -- admin/owner ven un dropdown con SOLO agentes
+              (nunca otros admins). Un agente no ve ningun listado: solo
+              puede "tomar" un ticket sin asignar, o ver (sin poder
+              tocar) a quien ya esta asignado. */}
+          {isAgentRole ? (
+            assignedAgentId ? (
+              <span
+                className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md",
+                  assignedAgentId === user?.id ? "text-primary" : "text-muted-foreground"
+                )}
+              >
+                <UserPlus className="h-3 w-3" />
+                <span className="hidden sm:inline">{assignLabel}</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleAssignChange(user?.id ?? null)}
+                className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md text-muted-foreground hover:bg-muted"
+              >
+                <UserPlus className="h-3 w-3" />
+                <span className="hidden sm:inline">{t("assign")}</span>
+              </button>
+            )
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  assignedAgentId ? "text-primary" : "text-muted-foreground"
+                )}
+              >
+                <UserPlus className="h-3 w-3" />
+                <span className="hidden sm:inline">{assignLabel}</span>
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                className="border-border bg-popover"
+              >
+                {assignableProfiles.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                    {t("noTeammates")}
+                  </DropdownMenuItem>
+                ) : (
+                  assignableProfiles.map((p) => {
+                    const isSelected = p.user_id === assignedAgentId;
+                    const presence = getPresence(p.user_id);
+                    return (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onClick={() => handleAssignChange(p.user_id)}
+                        className={cn(
+                          "text-sm",
+                          isSelected ? "text-primary" : "text-popover-foreground"
+                        )}
+                      >
+                        <PresenceDot
+                          status={presence}
+                          label={presenceLabel(
+                            presence,
+                            getRow(p.user_id)?.last_seen_at ?? null,
+                            now
+                          )}
+                          className="mr-2"
+                        />
+                        <span className="flex-1">
+                          {firstName(p.full_name)}
+                          {p.user_id === user?.id ? t("me") : ""}
+                        </span>
+                        {isSelected && <Check className="ml-2 h-3 w-3" />}
+                      </DropdownMenuItem>
+                    );
+                  })
+                )}
+                {assignedAgentId && (
+                  <>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
+                      onClick={() => handleAssignChange(null)}
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("unassign")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -1306,6 +1369,7 @@ export function MessageThread({
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         claimRequired={claimRequired}
+        conversationClosed={isClosed}
         onSend={handleSend}
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}

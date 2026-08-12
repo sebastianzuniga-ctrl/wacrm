@@ -115,6 +115,11 @@ interface MessageComposerProps {
   /** True when an 'agent'-role caller must claim this AI handoff
    *  ("Tomar contacto") before they're allowed to write here. */
   claimRequired?: boolean;
+  /** True once the conversation's status is 'closed' -- blocks all
+   *  sending regardless of role. Only admin/owner can revert the
+   *  status (message-thread.tsx enforces that), which then clears
+   *  this flag automatically since it's derived from `status`. */
+  conversationClosed?: boolean;
   onSend: (text: string, replyToId?: string) => void;
   onSendMedia: (payload: SendMediaPayload) => void;
   onSendInteractive: (payload: InteractiveMessagePayload, replyToId?: string) => void;
@@ -138,6 +143,7 @@ export function MessageComposer({
   conversationId,
   sessionExpired,
   claimRequired = false,
+  conversationClosed = false,
   onSend,
   onSendMedia,
   onSendInteractive,
@@ -195,7 +201,7 @@ export function MessageComposer({
   const readOnly = !canSend;
   // Media (like free-form text) is only allowed inside the 24h window,
   // and (for agents) only once the handoff has been claimed.
-  const inputsDisabled = readOnly || sessionExpired || claimRequired;
+  const inputsDisabled = readOnly || sessionExpired || claimRequired || conversationClosed;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -227,7 +233,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired || claimRequired) return;
+    if (!trimmed || sending || sessionExpired || claimRequired || conversationClosed) return;
 
     setSending(true);
     try {
@@ -239,7 +245,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, claimRequired, onSend, replyTo?.id]);
+  }, [text, sending, sessionExpired, claimRequired, conversationClosed, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -559,7 +565,12 @@ export function MessageComposer({
           />
         </div>
       )}
-      {sessionExpired && (
+      {conversationClosed && (
+        <div className="mb-2 rounded-lg bg-muted px-3 py-2">
+          <p className="text-xs text-muted-foreground">{t("conversationClosedHint")}</p>
+        </div>
+      )}
+      {!conversationClosed && sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
             {t("sessionExpiredHint")}
@@ -575,7 +586,7 @@ export function MessageComposer({
           </Button>
         </div>
       )}
-      {!sessionExpired && claimRequired && (
+      {!conversationClosed && !sessionExpired && claimRequired && (
         <div className="mb-2 rounded-lg bg-red-500/10 px-3 py-2">
           <p className="text-xs text-red-400">{t("claimRequiredHint")}</p>
         </div>
@@ -752,13 +763,15 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : claimRequired
-                    ? t("claimRequiredPlaceholder")
-                    : t("typeMessagePlaceholder")
+                : conversationClosed
+                  ? t("conversationClosedPlaceholder")
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : claimRequired
+                      ? t("claimRequiredPlaceholder")
+                      : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly || claimRequired}
+            disabled={sessionExpired || readOnly || claimRequired || conversationClosed}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
@@ -766,7 +779,7 @@ export function MessageComposer({
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly || claimRequired) && "cursor-not-allowed opacity-50"
+              (sessionExpired || readOnly || claimRequired || conversationClosed) && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -774,7 +787,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || claimRequired || sending}
+            disabled={!text.trim() || sessionExpired || claimRequired || conversationClosed || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
