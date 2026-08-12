@@ -55,7 +55,7 @@ const SECURITY_HEADERS = [
       "font-src 'self' data:",
       // Supabase REST + realtime (WSS). All Meta API calls happen
       // server-side, so graph.facebook.com does not belong here.
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co http://192.168.0.123:54321 ws://192.168.0.123:54321 https://supabase.ino.cl wss://supabase.ino.cl",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co http://192.168.0.123:54321 ws://192.168.0.123:54321 https://supabase.ino.cl wss://supabase.ino.cl https://test.supabase.ino.cl wss://test.supabase.ino.cl",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
