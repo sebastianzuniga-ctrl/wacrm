@@ -7,32 +7,27 @@
 // Reusa el mismo loginJson.jsp del sistema INO que ya usa
 // /api/auth/ino-login, pero:
 //   - NO crea sesión de Supabase Auth (esto es independiente).
-//   - Exige que el perfil vinculado (profiles.login_ino) tenga
-//     account_role 'owner' o 'admin' -- Studio es más sensible
-//     que el CRM normal.
+//   - Autoriza directamente por el campo `rol` que devuelve
+//     loginJson.jsp (SOP, ASI) -- Studio es acceso de
+//     infraestructura, no un permiso de negocio de wacrm, así
+//     que no depende de profiles.account_role ni de que exista
+//     un perfil de wacrm vinculado.
 //   - Si es válido, firma una cookie propia (sb_gate, HMAC,
 //     ver src/lib/supabase-gate/token.ts) que nginx valida en
 //     cada request a Studio vía auth_request.
 // ============================================================
 import { NextResponse } from 'next/server'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { signGateToken } from '@/lib/supabase-gate/token'
 
 const INO_LOGIN_URL = 'http://sistema.ino.cl/DentWeb12/dent/rest/loginJson.jsp'
 const GATE_COOKIE = 'sb_gate'
 const SESSION_HOURS = 8
-const ALLOWED_ROLES = ['owner', 'admin']
+const ALLOWED_INO_ROLES = ['SOP', 'ASI']
 const STUDIO_URL = 'https://supabase.ino.cl/'
 
 interface InoLoginResponse {
   peticion?: { exito?: string }
-}
-
-function supabaseAdmin() {
-  return createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  object?: { rol?: string; login?: string }
 }
 
 function loginPageHtml(error?: string) {
@@ -116,19 +111,8 @@ export async function POST(request: Request) {
     return fail('Usuario o contraseña incorrectos.')
   }
 
-  const admin = supabaseAdmin()
-  const { data: profile, error } = await admin
-    .from('profiles')
-    .select('account_role')
-    .eq('login_ino', login)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[supabase-gate] profile lookup failed:', error)
-    return fail('Error interno. Intenta de nuevo.')
-  }
-
-  if (!profile || !ALLOWED_ROLES.includes(profile.account_role)) {
+  const rol = inoData?.object?.rol || ''
+  if (!ALLOWED_INO_ROLES.includes(rol)) {
     return fail('Tu usuario no tiene permiso para acceder a Supabase Studio.')
   }
 
