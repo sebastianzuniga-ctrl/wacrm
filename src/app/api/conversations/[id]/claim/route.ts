@@ -73,7 +73,9 @@ export async function POST(
         .select('full_name')
         .eq('user_id', ctx.userId)
         .maybeSingle();
-      const agentName = profile?.full_name?.trim() || 'nuestro equipo';
+      // Solo el primer nombre en el saludo -- no nombre completo con
+      // apellidos (pedido explicito, ver sesion 2026-08-12).
+      const agentName = profile?.full_name?.trim().split(/\s+/)[0] || 'nuestro equipo';
 
       await sendMessageToConversation(ctx.supabase, ctx.accountId, {
         conversationId: id,
