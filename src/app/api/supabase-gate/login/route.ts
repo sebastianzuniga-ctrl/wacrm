@@ -23,7 +23,10 @@ const INO_LOGIN_URL = 'http://sistema.ino.cl/DentWeb12/dent/rest/loginJson.jsp'
 const GATE_COOKIE = 'sb_gate'
 const SESSION_HOURS = 8
 const ALLOWED_INO_ROLES = ['SOP', 'ASI']
-const STUDIO_URL = 'https://supabase.ino.cl/'
+// Configurable por entorno -- test y produccion comparten este mismo
+// codigo pero cada uno debe redirigir a SU PROPIO dominio de Studio,
+// no al de la otra instancia (bug real: sesion 2026-08-13).
+const STUDIO_URL = process.env.SUPABASE_STUDIO_URL || 'https://supabase.ino.cl/'
 
 interface InoLoginResponse {
   peticion?: { exito?: string }
