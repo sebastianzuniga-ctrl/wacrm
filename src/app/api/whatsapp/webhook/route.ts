@@ -94,6 +94,17 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        // Presente solo cuando status === 'failed' -- el motivo real
+        // del rechazo (plantilla fuera de ventana, numero bloqueado,
+        // limite de mensajeria, etc). Antes se descartaba sin leerlo,
+        // dejando error_message vacio en broadcast_recipients/messages
+        // (bug real: sesion 2026-08-14).
+        errors?: Array<{
+          code?: number
+          title?: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -404,7 +415,31 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
+  // Construir un mensaje legible del error de Meta, si vino uno.
+  // Solo aplica cuando status.status === 'failed'; para el resto de
+  // los estados (sent/delivered/read) status.errors siempre viene vacio.
+  const failureReason = status.errors?.[0]
+    ? [
+        status.errors[0].title,
+        status.errors[0].message,
+        status.errors[0].error_data?.details,
+      ]
+        .filter(Boolean)
+        .join(' — ') || null
+    : null
+  if (status.status === 'failed' && failureReason) {
+    console.error(
+      `[webhook] delivery failed for message ${status.id}:`,
+      failureReason
+    )
+  }
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
@@ -447,6 +482,7 @@ async function handleStatusUpdate(status: {
     if (status.status === 'sent' && !('sent_at' in update)) update.sent_at = tsIso
     if (status.status === 'delivered') update.delivered_at = tsIso
     if (status.status === 'read') update.read_at = tsIso
+    if (status.status === 'failed' && failureReason) update.error_message = failureReason
 
     const { error: recUpdateErr } = await supabaseAdmin()
       .from('broadcast_recipients')
