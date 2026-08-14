@@ -27,6 +27,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
@@ -48,6 +49,15 @@ export interface BroadcastRecipientInput {
   to: string;
   /** Positional body params for the template ({{1}}, {{2}}…). */
   params?: string[];
+  /**
+   * Header media (image/video/document URL or a prior Meta media id)
+   * and/or per-button overrides for this recipient. Optional -- most
+   * callers only need `params` for body text substitution.
+   */
+  messageParams?: Pick<
+    SendTimeParams,
+    'headerText' | 'headerMediaUrl' | 'headerMediaId' | 'buttonParams'
+  >;
 }
 
 export interface CreateBroadcastParams {
@@ -61,6 +71,7 @@ interface PlannedRecipient {
   recipientRowId: string;
   phone: string;
   params: string[];
+  messageParams?: BroadcastRecipientInput['messageParams'];
 }
 
 export interface BroadcastPlan {
@@ -147,7 +158,12 @@ export async function createBroadcast(
 
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.
-  const resolved: { contactId: string; phone: string; params: string[] }[] = [];
+  const resolved: {
+    contactId: string;
+    phone: string;
+    params: string[];
+    messageParams?: BroadcastRecipientInput['messageParams'];
+  }[] = [];
   let rejected = 0;
   for (const r of recipients) {
     const sanitized = sanitizePhoneForMeta(typeof r.to === 'string' ? r.to : '');
@@ -164,6 +180,7 @@ export async function createBroadcast(
       params: Array.isArray(r.params)
         ? r.params.filter((p): p is string => typeof p === 'string')
         : [],
+      messageParams: r.messageParams,
     });
   }
 
@@ -258,7 +275,12 @@ export async function createBroadcast(
   const byContact = new Map(filtered.map((r) => [r.contactId, r]));
   const planned: PlannedRecipient[] = recipientRows.map((row) => {
     const r = byContact.get(row.contact_id as string)!;
-    return { recipientRowId: row.id as string, phone: r.phone, params: r.params };
+    return {
+      recipientRowId: row.id as string,
+      phone: r.phone,
+      params: r.params,
+      messageParams: r.messageParams,
+    };
   });
 
   return {
@@ -326,6 +348,9 @@ export async function deliverBroadcast(
           language: plan.templateLanguage,
           template: plan.templateRow ?? undefined,
           params: recipient.params,
+          messageParams: recipient.messageParams
+            ? { body: recipient.params, ...recipient.messageParams }
+            : undefined,
         });
         sentMessageId = result.messageId;
         lastError = null;

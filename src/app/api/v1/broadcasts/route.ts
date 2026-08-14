@@ -8,7 +8,16 @@
 //     "template_name": "promo_july",        // required, approved template
 //     "template_language": "en_US",         // optional (default en_US)
 //     "recipients": [                        // required, 1..1000
-//       { "to": "+14155550123", "params": ["Jane"] },
+//       {
+//         "to": "+14155550123",
+//         "params": ["Jane"],               // optional, body {{1}}, {{2}}...
+//         // Optional -- only for templates with a media header and/or
+//         // buttons that need per-send overrides:
+//         "header_media_url": "https://example.com/promo.png",
+//         "header_media_id": "1234567890",   // alternative to header_media_url
+//         "header_text": "Jane",             // for a TEXT header with a variable
+//         "button_params": { "0": "AAAA", "1": "BBBB" }  // keyed by button index
+//       },
 //       { "to": "+14155550124" }
 //     ]
 //   }
@@ -68,10 +77,35 @@ export async function POST(request: Request) {
         typeof body.template_language === 'string'
           ? body.template_language
           : null,
-      recipients: recipients.map((r) => ({
-        to: typeof r?.to === 'string' ? r.to : '',
-        params: Array.isArray(r?.params) ? r.params : undefined,
-      })),
+      recipients: recipients.map((r) => {
+        const hasMessageParams =
+          typeof r?.header_media_url === 'string' ||
+          typeof r?.header_media_id === 'string' ||
+          typeof r?.header_text === 'string' ||
+          (r?.button_params && typeof r.button_params === 'object');
+        return {
+          to: typeof r?.to === 'string' ? r.to : '',
+          params: Array.isArray(r?.params) ? r.params : undefined,
+          messageParams: hasMessageParams
+            ? {
+                headerMediaUrl:
+                  typeof r?.header_media_url === 'string'
+                    ? r.header_media_url
+                    : undefined,
+                headerMediaId:
+                  typeof r?.header_media_id === 'string'
+                    ? r.header_media_id
+                    : undefined,
+                headerText:
+                  typeof r?.header_text === 'string' ? r.header_text : undefined,
+                buttonParams:
+                  r?.button_params && typeof r.button_params === 'object'
+                    ? (r.button_params as Record<number, string>)
+                    : undefined,
+              }
+            : undefined,
+        };
+      }),
     });
 
     // Fan out after the response is sent. Uses the same service-role
