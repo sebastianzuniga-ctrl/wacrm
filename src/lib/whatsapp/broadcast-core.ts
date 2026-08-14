@@ -394,7 +394,11 @@ export async function deliverBroadcast(
           sender_type: 'agent',
           content_type: 'template',
           content_text: previewText,
-          media_url: null,
+          // Imagen/video del header de la plantilla, si el recipient
+          // trajo uno -- antes se forzaba a null y la campaña quedaba
+          // sin preview visual en el hilo del chat (bug real,
+          // sesion 2026-08-14), aunque el envio a Meta si la incluia.
+          media_url: recipient.messageParams?.headerMediaUrl ?? null,
           template_name: plan.templateName,
           interactive_payload: null,
           message_id: sentMessageId,
