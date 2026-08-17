@@ -7,6 +7,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { BrowserNotifications } from "@/components/notifications/browser-notifications";
+import { InactivityCountdownBadge } from "@/components/session/inactivity-countdown-badge";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -49,6 +50,7 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
           la cola de handoff + "mis tickets", y actualiza el titulo
           de la pestaña. Ver el componente para detalles. */}
       <BrowserNotifications />
+      <InactivityCountdownBadge />
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />

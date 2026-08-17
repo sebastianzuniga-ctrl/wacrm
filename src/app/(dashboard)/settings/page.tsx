@@ -12,6 +12,7 @@ import { SettingsRail } from '@/components/settings/settings-rail';
 import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
+import { SessionInactivitySettings } from '@/components/settings/session-inactivity-settings';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { BroadcastPacingSettings } from '@/components/settings/broadcast-pacing-settings';
@@ -80,7 +81,12 @@ function SettingsPageInner() {
   const panel: Record<SettingsSection, ReactNode> = {
     overview: <SettingsOverview onSelect={go} />,
     profile: <ProfileForm />,
-    security: <SecurityPanel />,
+    security: (
+      <>
+        <SecurityPanel />
+        <SessionInactivitySettings />
+      </>
+    ),
     appearance: <AppearancePanel />,
     whatsapp: (
       <>

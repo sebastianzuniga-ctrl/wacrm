@@ -35,6 +35,7 @@ function LoginPageInner() {
   // account. After a successful sign-in we send them to the join
   // page to accept rather than to /dashboard.
   const inviteToken = searchParams.get("invite");
+  const sessionExpired = searchParams.get("expired") === "1";
   const t = useTranslations("LoginPage");
 
   const [email, setEmail] = useState("");
@@ -117,6 +118,12 @@ function LoginPageInner() {
             {error && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
                 {error}
+              </div>
+            )}
+
+            {!error && sessionExpired && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-400">
+                {t('sessionExpired')}
               </div>
             )}
 

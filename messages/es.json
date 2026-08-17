@@ -2,6 +2,7 @@
   "LoginPage": {
     "titleAccept": "Inicia sesión para aceptar",
     "titleWelcome": "Bienvenido de nuevo",
+    "sessionExpired": "Tu sesión expiró por inactividad. Inicia sesión nuevamente.",
     "descAccept": "Inicia sesión y te llevaremos a la invitación.",
     "descWelcome": "Inicia sesión en tu cuenta",
     "emailLabel": "Correo electrónico",
