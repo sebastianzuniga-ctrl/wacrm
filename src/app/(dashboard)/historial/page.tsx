@@ -5,6 +5,7 @@ import { hasMinRole } from "@/lib/auth/roles"
 import { Loader2, ShieldAlert, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { PRESENCE_DOT_CLASS } from "@/components/presence/presence-dot"
 
 interface AgentRow {
   user_id: string
@@ -12,7 +13,7 @@ interface AgentRow {
   email: string
   account_role: string
   last_seen_at: string | null
-  presence_status: "online" | "away" | null
+  presence_status: "online" | "away" | "offline"
   total_attended: number
   open_count: number
   pending_count: number
@@ -210,9 +211,7 @@ export default function HistorialPage() {
                   <td className="p-3 text-foreground">
                     <div className="flex items-center gap-2">
                       <span
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                          a.presence_status === "online" ? "bg-primary" : "bg-muted-foreground/40"
-                        }`}
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${PRESENCE_DOT_CLASS[a.presence_status]}`}
                       />
                       <div>
                         <div>{a.full_name}</div>

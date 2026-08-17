@@ -13,6 +13,7 @@
 // ============================================================
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { derivePresence } from '@/lib/presence';
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -111,13 +112,18 @@ export async function GET(request: Request) {
         else if (status === 'closed') closed_count++;
       }
       const pres = presenceByUser.get(p.user_id);
+      // member_presence.status nunca se borra al cerrar la pestaña
+      // (ver src/lib/presence.ts) -- "offline" se deriva de qué tan
+      // vieja es last_seen_at, no se puede leer el status crudo o
+      // usuarios desconectados hace días aparecen como "online".
+      const derivedStatus = derivePresence(pres?.status, pres?.last_seen_at ?? null, Date.now());
       return {
         user_id: p.user_id,
         full_name: p.full_name,
         email: p.email,
         account_role: p.account_role,
         last_seen_at: pres?.last_seen_at ?? null,
-        presence_status: pres?.status ?? null,
+        presence_status: derivedStatus,
         total_attended: convIds.size,
         open_count,
         pending_count,
