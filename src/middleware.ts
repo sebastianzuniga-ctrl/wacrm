@@ -68,6 +68,7 @@ export async function middleware(request: NextRequest) {
       sessionExpiredByInactivity = true
       effectiveUser = null
       supabaseResponse.cookies.delete('wacrm_last_seen')
+      supabaseResponse.cookies.delete('wacrm_session_meta')
     } else {
       // La cookie debe sobrevivir MÁS que el límite de inactividad;
       // si el navegador la borrara justo al llegar al límite, el
