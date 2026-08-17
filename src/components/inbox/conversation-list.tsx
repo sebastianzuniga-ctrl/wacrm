@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, EyeOff, MoreVertical } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { useAuth } from "@/hooks/use-auth";
@@ -550,6 +550,8 @@ function ConversationItem({
   onSelect,
   t,
 }: ConversationItemProps) {
+  const { accountRole } = useAuth();
+  const isAdmin = accountRole === "admin" || accountRole === "owner";
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
@@ -557,6 +559,17 @@ function ConversationItem({
   const handleClick = useCallback(() => {
     onSelect(conversation);
   }, [onSelect, conversation]);
+  const handleMarkUnread = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      const supabase = createClient();
+      await supabase
+        .from("conversations")
+        .update({ unread_count: 1 })
+        .eq("id", conversation.id);
+    },
+    [conversation.id],
+  );
 
   const timeAgo = conversation.last_message_at
     ? formatDistanceToNow(new Date(conversation.last_message_at), {
@@ -564,55 +577,82 @@ function ConversationItem({
       })
     : "";
 
-  return (
-    <button
-      onClick={handleClick}
-      className={cn(
-        "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
-      )}
-    >
-      {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-        {contact?.avatar_url ? (
-          <img
-            src={contact.avatar_url}
-            alt={displayName}
-            className="h-10 w-10 rounded-full object-cover"
-          />
-        ) : (
-          initials
-        )}
-      </div>
+  const isUnread = conversation.unread_count > 0;
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
-          </span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
-        </div>
-        <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">
-            {conversation.last_message_text || t("noMessagesYet")}
-          </p>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.unread_count > 0 && (
-              <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
-                {conversation.unread_count}
-              </span>
-            )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
+  return (
+    <div className="group relative">
+      <button
+        onClick={handleClick}
+        className={cn(
+          "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
+          isUnread && "bg-rose-500/10 hover:bg-rose-500/15",
+          isActive && "border-l-2 border-primary bg-muted/70"
+        )}
+      >
+        {/* Avatar */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          {contact?.avatar_url ? (
+            <img
+              src={contact.avatar_url}
+              alt={displayName}
+              className="h-10 w-10 rounded-full object-cover"
             />
+          ) : (
+            initials
+          )}
+        </div>
+
+        {/* Content */}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+          </div>
+          <div className="mt-0.5 flex items-center justify-between gap-2">
+            <p className="truncate text-xs text-muted-foreground">
+              {conversation.last_message_text || t("noMessagesYet")}
+            </p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {isUnread && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                  {conversation.unread_count}
+                </span>
+              )}
+              <span
+                className={cn(
+                  "h-2 w-2 rounded-full",
+                  STATUS_COLORS[conversation.status]
+                )}
+                title={conversation.status}
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {/* Menú de admin: marcar como no leído (reversible). No anidar
+          dentro del <button> de arriba -- un botón dentro de otro
+          botón es HTML inválido, por eso vive como hermano posicionado
+          encima. Solo visible al hacer hover para no ensuciar la
+          lista todo el tiempo. */}
+      {isAdmin && !isUnread && (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2 top-2 hidden h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground group-hover:flex"
+            title={t("markUnread")}
+          >
+            <MoreVertical className="h-3.5 w-3.5" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+            <DropdownMenuItem onClick={handleMarkUnread}>
+              <EyeOff className="mr-2 h-3.5 w-3.5" />
+              {t("markUnread")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
   );
 }
