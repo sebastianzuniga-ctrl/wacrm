@@ -29,6 +29,34 @@ async function getInactivityLimitMs(supabase: ReturnType<typeof createServerClie
   return cachedInactivityLimitMs
 }
 
+// Perfiles personalizados (Configuración > Perfiles, migración 057).
+// Sin cache a propósito: si un admin revoca acceso a una página, debe
+// aplicar en el siguiente request, no hasta que expire un TTL como el
+// de getInactivityLimitMs de arriba.
+async function getAllowedPagesForUser(
+  supabase: ReturnType<typeof createServerClient>,
+  userId: string,
+): Promise<string[] | null> {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('custom_profile_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (!profile?.custom_profile_id) return null
+    const { data: customProfile } = await supabase
+      .from('custom_profiles')
+      .select('allowed_pages')
+      .eq('id', profile.custom_profile_id)
+      .maybeSingle()
+    return customProfile?.allowed_pages ?? null
+  } catch {
+    // Falla de red/DB -- fail open (no restringir) antes que dejar a
+    // todo el mundo bloqueado por un error transitorio.
+    return null
+  }
+}
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -153,6 +181,26 @@ export async function middleware(request: NextRequest) {
       url.searchParams.set('expired', '1')
     }
     return withRefreshedCookies(NextResponse.redirect(url))
+  }
+
+  // Perfiles personalizados: si el usuario está autenticado y tiene un
+  // perfil asignado que restringe páginas, bloquear el acceso directo
+  // por URL a cualquier página protegida fuera de su allowed_pages --
+  // el filtro del sidebar (src/components/layout/sidebar.tsx) solo
+  // oculta el link, esto es lo que realmente impide entrar.
+  if (effectiveUser) {
+    const matchedProtected = protectedPaths.find((path) => request.nextUrl.pathname.startsWith(path))
+    if (matchedProtected) {
+      const allowedPages = await getAllowedPagesForUser(supabase, effectiveUser.id)
+      if (allowedPages && !allowedPages.includes(matchedProtected)) {
+        const url = request.nextUrl.clone()
+        // Redirige a la primera página que sí tenga permitida, para
+        // no generar un loop si '/dashboard' mismo está restringido.
+        url.pathname = allowedPages[0] ?? '/login'
+        url.search = ''
+        return withRefreshedCookies(NextResponse.redirect(url))
+      }
+    }
   }
 
   // API routes that need auth (not webhooks)

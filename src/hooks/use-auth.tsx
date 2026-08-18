@@ -35,6 +35,7 @@ interface Profile {
   beta_features: string[];
   account_id: string | null;
   account_role: AccountRole | null;
+  custom_profile_id: string | null;
 }
 
 interface AccountSummary {
@@ -108,6 +109,14 @@ interface AuthContextValue {
   canEditSettings: boolean;
   /** True if the caller can send messages and edit operational data (agent+). */
   canSendMessages: boolean;
+  /**
+   * Menu item hrefs this user is allowed to see, per their assigned
+   * custom_profile (Configuración > Perfiles). NULL = no custom
+   * profile assigned, so the user sees everything their accountRole
+   * already permits -- a custom profile can only ever RESTRICT
+   * within that ceiling, never expand it.
+   */
+  allowedPages: string[] | null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -121,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [allowedPages, setAllowedPages] = useState<string[] | null>(null);
   const [loading, setLoading] = useState(true);
   // Tracked separately from `loading`. The session settles fast (one
   // local cookie read); the profile fetch crosses the network and
@@ -144,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role",
+          "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, custom_profile_id",
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -221,8 +231,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           beta_features: data.beta_features ?? [],
           account_id: data.account_id ?? null,
           account_role: accountRole,
+          custom_profile_id: data.custom_profile_id ?? null,
         });
         setAccount(accountRow);
+
+        // Resolver las páginas permitidas del perfil personalizado
+        // asignado (si hay uno). Sin perfil -> null -> el resto de la
+        // app trata "null" como "sin restricción adicional".
+        if (data.custom_profile_id) {
+          const { data: customProfile, error: cpError } = await supabase
+            .from("custom_profiles")
+            .select("allowed_pages")
+            .eq("id", data.custom_profile_id)
+            .maybeSingle();
+          if (cpError) {
+            console.error("[AuthProvider] fetchCustomProfile error:", cpError.message);
+            setAllowedPages(null);
+          } else {
+            setAllowedPages(customProfile?.allowed_pages ?? null);
+          }
+        } else {
+          setAllowedPages(null);
+        }
       } else {
         lastFetchedUserIdRef.current = null;
       }
@@ -354,6 +384,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         account,
         defaultCurrency: account?.default_currency ?? DEFAULT_CURRENCY,
         broadcastMessagesPerMinute: account?.broadcast_messages_per_minute ?? 60,
+        allowedPages,
         ...derived,
       }}
     >
@@ -394,6 +425,7 @@ export function useAuth(): AuthContextValue {
       canManageMembers: false,
       canEditSettings: false,
       canSendMessages: false,
+      allowedPages: null,
     };
   }
   return ctx;

@@ -130,7 +130,7 @@ import { useTranslations } from "next-intl";
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, allowedPages, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
   const handoffCount = useHandoffQueueCount();
@@ -226,7 +226,12 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             {navItems
               .filter(
                 (item) =>
-                  !item.minRole || (!!accountRole && hasMinRole(accountRole, item.minRole)),
+                  (!item.minRole || (!!accountRole && hasMinRole(accountRole, item.minRole))) &&
+                  // Perfil personalizado (Configuración > Perfiles): si el
+                  // usuario tiene uno asignado, allowedPages restringe el
+                  // menú a esa lista además del chequeo de minRole de
+                  // arriba -- nunca lo amplía, solo lo acota más.
+                  (!allowedPages || allowedPages.includes(item.href)),
               )
               .map((item) => {
               const isActive =

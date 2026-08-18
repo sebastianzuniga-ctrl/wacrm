@@ -75,6 +75,7 @@ export interface AccountMember {
   avatar_url: string | null;
   role: AccountRole;
   joined_at: string;
+  custom_profile_id: string | null;
 }
 
 /**
