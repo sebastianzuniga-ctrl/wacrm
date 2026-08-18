@@ -48,3 +48,6 @@ logs/
 
 # Dumps de backup de la base de datos - NUNCA a git (datos de pacientes + crecen sin límite)
 backups/
+
+# Subproyecto RAG (Python) -- en uso en el servidor pero no debe versionarse
+/rag/
