@@ -17,7 +17,7 @@
 // ============================================================
 import { getPool } from './sesion';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
-import { lookupPacienteByPhone, type PacienteCandidato } from './paciente';
+import { lookupPacienteByPhone, getPacienteByFicha, type PacienteCandidato } from './paciente';
 
 const MAX_ATTEMPTS = 3; // 1 intento + 2 reintentos
 const RETRY_DELAY_MS = 2000;
@@ -34,6 +34,7 @@ export interface ResolvePatientResult {
 export async function resolvePatientForContact(
   waId: string,
   contactId: string,
+  currentEmail: string | null = null,
 ): Promise<ResolvePatientResult> {
   let result: Awaited<ReturnType<typeof lookupPacienteByPhone>> | null = null;
 
@@ -67,6 +68,24 @@ export async function resolvePatientForContact(
   if (pacientes.length === 1) {
     const p = pacientes[0];
     const nombreCompleto = `${p.pac_nombre} ${p.pac_apellido}`.trim();
+
+    // La query SQL de buscar_paciente_telefono no trae email -- se
+    // completa con una segunda consulta a getPacientes.jsp (mismo
+    // endpoint que "Agregar Paciente INO" en Contactos), que sí lo
+    // incluye. Best-effort: si falla o no hay email, no bloquea la
+    // resolución del nombre/pac_codigo, que es lo más importante.
+    // Solo se completa si el contacto NO tenía email ya puesto --
+    // nunca pisa un email cargado a mano por un agente.
+    let email: string | null = null;
+    if (!currentEmail) {
+      try {
+        const detalle = await getPacienteByFicha(p.pac_codigo);
+        email = detalle[0]?.email ?? null;
+      } catch (err) {
+        console.error('[resolve-patient] getPacienteByFicha failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     await supabaseAdmin()
       .from('contacts')
       .update({
@@ -74,6 +93,7 @@ export async function resolvePatientForContact(
         pac_codigo: p.pac_codigo,
         es_paciente_ino: true,
         pac_lookup_checked_at: checkedAt,
+        ...(email ? { email } : {}),
       })
       .eq('id', contactId);
     await syncBotinoContacts(waId, {

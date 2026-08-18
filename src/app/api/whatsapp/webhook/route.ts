@@ -694,7 +694,7 @@ async function processMessage(
   // sincroniza tambien con la base de n8n).
   if (!contactRecord.pac_lookup_checked_at) {
     try {
-      const resolution = await resolvePatientForContact(senderPhone, contactRecord.id)
+      const resolution = await resolvePatientForContact(senderPhone, contactRecord.id, contactRecord.email ?? null)
       if (resolution.outcome === 'single' && resolution.pacientes?.[0]) {
         const p = resolution.pacientes[0]
         contactRecord.name = `${p.pac_nombre} ${p.pac_apellido}`.trim()
