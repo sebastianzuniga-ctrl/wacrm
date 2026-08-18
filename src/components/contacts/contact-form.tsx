@@ -24,8 +24,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Search, CheckCircle2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+
+interface FichaCandidato {
+  ficha: string;
+  nombreCompleto: string;
+  telefono: string | null;
+  email: string | null;
+  estado: string;
+}
 
 interface ContactFormProps {
   open: boolean;
@@ -70,6 +78,16 @@ export function ContactForm({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
 
+  // Búsqueda por número de ficha INO (solo para contactos nuevos).
+  // Al elegir un candidato (o su único teléfono) se precargan
+  // nombre/teléfono/correo en los campos de abajo -- el admin puede
+  // seguir editando antes de crear, igual que si los hubiera tecleado.
+  const [ficha, setFicha] = useState('');
+  const [fichaSearching, setFichaSearching] = useState(false);
+  const [fichaError, setFichaError] = useState<string | null>(null);
+  const [fichaResults, setFichaResults] = useState<FichaCandidato[] | null>(null);
+  const [manualMode, setManualMode] = useState(false);
+
   useEffect(() => {
     if (open) {
       setName(contact?.name ?? '');
@@ -78,30 +96,90 @@ export function ContactForm({
       setCompany(contact?.company ?? '');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
+      setFicha('');
+      setFichaError(null);
+      setFichaResults(null);
+      setManualMode(false);
       fetchTags();
     }
   }, [open, contact]);
 
+  async function handleBuscarFicha() {
+    const value = ficha.trim();
+    if (!value) return;
+    setFichaSearching(true);
+    setFichaError(null);
+    setFichaResults(null);
+    try {
+      const res = await fetch(`/api/ino-paciente-ficha?ficha=${encodeURIComponent(value)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? 'Error al buscar');
+      setFichaResults(body.pacientes ?? []);
+    } catch (err) {
+      setFichaError(err instanceof Error ? err.message : t('fichaError'));
+    } finally {
+      setFichaSearching(false);
+    }
+  }
+
+  const [updatingExisting, setUpdatingExisting] = useState(false);
+
+  async function handleUpdateExisting() {
+    if (!dupMatch) return;
+    setUpdatingExisting(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({
+          name: name.trim() || null,
+          email: email.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', dupMatch.contact.id);
+      if (error) throw error;
+      toast.success(t('toastSuccessEdit'));
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('toastError'));
+    } finally {
+      setUpdatingExisting(false);
+    }
+  }
+
+  function applyCandidato(candidato: FichaCandidato) {
+    setName(candidato.nombreCompleto);
+    if (candidato.telefono) setPhone(candidato.telefono);
+    if (candidato.email) setEmail(candidato.email);
+    if (candidato.telefono) checkDuplicateFor(candidato.telefono);
+  }
+
   // Look up an existing contact with this number (new contacts only).
-  // Runs on blur so we don't query on every keystroke.
-  async function checkDuplicate() {
+  // Runs on blur so we don't query on every keystroke. Accepts an
+  // explicit value for the case a caller just called setPhone() and
+  // can't rely on the `phone` state var being updated yet (React
+  // state updates are async) -- e.g. applyCandidato() below.
+  async function checkDuplicateFor(value: string) {
     if (isEdit || !accountId) return;
-    const value = phone.trim();
-    if (!value) {
+    const trimmed = value.trim();
+    if (!trimmed) {
       setDupMatch(null);
       return;
     }
     setCheckingDup(true);
     try {
-      const existing = await findExistingContact(supabase, accountId, value);
+      const existing = await findExistingContact(supabase, accountId, trimmed);
       setDupMatch(
         existing
-          ? { contact: existing, exact: isExactMatch(existing, value) }
+          ? { contact: existing, exact: isExactMatch(existing, trimmed) }
           : null,
       );
     } finally {
       setCheckingDup(false);
     }
+  }
+  function checkDuplicate() {
+    return checkDuplicateFor(phone);
   }
 
   async function fetchTags() {
@@ -235,6 +313,104 @@ export function ContactForm({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!isEdit && !manualMode && (
+            <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+              <Label htmlFor="cf-ficha" className="text-muted-foreground">
+                {t('fichaLabel')}
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="cf-ficha"
+                  value={ficha}
+                  onChange={(e) => setFicha(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleBuscarFicha();
+                    }
+                  }}
+                  placeholder={t('fichaPlaceholder')}
+                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
+                />
+                <Button
+                  type="button"
+                  onClick={handleBuscarFicha}
+                  disabled={fichaSearching || !ficha.trim()}
+                  className="shrink-0 bg-primary hover:bg-primary/90 text-primary-foreground"
+                >
+                  {fichaSearching ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Search className="size-4" />
+                  )}
+                  {fichaSearching ? t('fichaSearching') : t('fichaSearch')}
+                </Button>
+              </div>
+
+              {fichaError && (
+                <p className="text-xs text-red-400">{fichaError}</p>
+              )}
+
+              {fichaResults && fichaResults.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t('fichaNotFound')}</p>
+              )}
+
+              {fichaResults && fichaResults.length > 0 && (
+                <div className="space-y-1.5">
+                  {fichaResults.length > 1 && (
+                    <p className="text-xs text-muted-foreground">{t('fichaSelectPhone')}</p>
+                  )}
+                  {fichaResults.map((candidato, idx) => (
+                    <button
+                      key={`${candidato.ficha}-${candidato.telefono ?? idx}`}
+                      type="button"
+                      onClick={() => applyCandidato(candidato)}
+                      disabled={!candidato.telefono}
+                      className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <div>
+                        <p className="font-medium text-foreground">{candidato.nombreCompleto}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {candidato.telefono ?? t('fichaNoPhone')}
+                          {candidato.email ? ` · ${candidato.email}` : ''}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          candidato.estado === 'ACT'
+                            ? 'bg-emerald-500/15 text-emerald-500'
+                            : candidato.estado === 'TMP'
+                              ? 'bg-amber-500/15 text-amber-500'
+                              : 'bg-muted-foreground/15 text-muted-foreground'
+                        }`}
+                      >
+                        {candidato.estado === 'ACT'
+                          ? t('fichaEstadoActivo')
+                          : candidato.estado === 'TMP'
+                            ? t('fichaEstadoTemporal')
+                            : t('fichaEstadoInactivo')}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {name && phone && (
+                <p className="flex items-center gap-1.5 text-xs text-emerald-500">
+                  <CheckCircle2 className="size-3.5" />
+                  {name}
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setManualMode(true)}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                {t('fichaUseManual')}
+              </button>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="cf-name" className="text-muted-foreground">
               {t('nameLabel')}
@@ -286,6 +462,21 @@ export function ContactForm({
                     >
                       {t('viewExisting', { name: dupMatch.contact.name || dupMatch.contact.phone })}
                     </button>
+                  )}
+                  {dupMatch.exact && fichaResults && (
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={handleUpdateExisting}
+                        disabled={updatingExisting}
+                        className="mt-1 h-7 border-red-500/40 text-red-300 hover:bg-red-500/10"
+                      >
+                        {updatingExisting && <Loader2 className="size-3 animate-spin" />}
+                        {t('updateExisting')}
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
