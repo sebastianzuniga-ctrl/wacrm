@@ -13,6 +13,7 @@
 // broadcast-core.ts) -- pero NO afecta el chat normal, IA, ni agenda.
 // ============================================================
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { notifyNoMolestarINO } from '@/lib/ino/no-molestar'
 
 const OPT_OUT_PHRASES = [
   'no recibir mensajes',
@@ -52,7 +53,9 @@ export async function markContactDoNotDisturb(
   db: SupabaseClient,
   accountId: string,
   contactId: string,
-  replyText: string
+  replyText: string,
+  phone?: string | null,
+  ficha?: string | null
 ): Promise<void> {
   const nowIso = new Date().toISOString()
   const { error: updErr } = await db
@@ -75,6 +78,27 @@ export async function markContactDoNotDisturb(
   })
   if (logErr) {
     console.error('[dnd] failed to log contact_dnd_events:', logErr.message)
+  }
+
+  // Fuente de verdad para envio de campañas: sistema INO. Avisamos el
+  // opt-out via WhatsApp para que INO tambien lo refleje -- best
+  // effort, nunca bloquea el flujo del webhook. Sin ficha (contacto
+  // nunca resuelto como paciente INO) no hay nada que avisar; queda
+  // en log para seguimiento manual.
+  if (phone) {
+    const result = await notifyNoMolestarINO(phone, ficha)
+    if (!result.ok) {
+      if (result.skipped === 'no_ficha') {
+        console.warn(
+          `[dnd] contacto ${contactId} hizo opt-out pero no tiene ficha INO -- no se notifico a INO.`
+        )
+      } else {
+        console.error(
+          `[dnd] fallo al notificar opt-out a INO para contacto ${contactId}:`,
+          result.error
+        )
+      }
+    }
   }
 }
 

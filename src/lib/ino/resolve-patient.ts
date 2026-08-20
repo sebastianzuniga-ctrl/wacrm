@@ -112,19 +112,20 @@ export async function resolvePatientForContact(
   }
 
   // Múltiples candidatos -- no adivinamos cuál es. wacrm mantiene el
-  // nombre de WhatsApp tal cual hasta que la persona se identifique
-  // (vía el flujo de selección de n8n). Solo dejamos marcado que se
-  // chequeó, para no repetir la consulta en cada mensaje siguiente.
+  // nombre de WhatsApp tal cual hasta que la persona se identifique.
+  // Solo dejamos marcado que se chequeó (wacrm no repite la consulta),
+  // pero NO tocamos `sesiones` acá -- si lo hiciéramos con
+  // pac_codigo='SELECCIONANDO', el switch "Estado Sesión" de n8n
+  // saltaría directo a "Resolver Selección" sin que "Enviar Lista
+  // Pacientes" se haya ejecutado nunca, y el paciente recibiría "responde
+  // con un número" sin haber visto la lista. Dejamos sesiones intacta
+  // para que n8n corra su propia cadena completa (Query INO Paciente ->
+  // Resolver Paciente -> Guardar Sesión -> Enviar Lista Pacientes) como
+  // si wacrm no hubiera intervenido en este caso puntual.
   await supabaseAdmin()
     .from('contacts')
     .update({ pac_lookup_checked_at: checkedAt })
     .eq('id', contactId);
-  await syncBotinoSesion(waId, {
-    pac_codigo: 'SELECCIONANDO',
-    pac_nombre: null,
-    pac_apellido: null,
-    pacientes_lista: pacientes,
-  });
   return { outcome: 'multiple', pacientes };
 }
 

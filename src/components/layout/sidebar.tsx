@@ -21,7 +21,6 @@ import {
   Route,
   Settings,
   Shield,
-  ShieldOff,
   User,
   UserCog,
   Users,
@@ -107,7 +106,7 @@ const navItems: NavItem[] = [
   { href: "/pipelines", labelKey: "pipelines", icon: GitBranch, minRole: "admin" },
   { href: "/broadcasts", labelKey: "broadcasts", icon: Radio, minRole: "admin" },
   { href: "/campaign-rules", labelKey: "campaignRules", icon: Route, minRole: "admin" },
-  { href: "/no-molestar", labelKey: "noMolestar", icon: ShieldOff, minRole: "admin" },
+  // { href: "/no-molestar", labelKey: "noMolestar", icon: ShieldOff (import removido), minRole: "admin" }, // deshabilitado 2026-08-20: fuente de verdad paso a ser INO
   { href: "/automations", labelKey: "automations", icon: Zap, minRole: "admin" },
   { href: "/flows", labelKey: "flows", icon: Workflow, beta: true, minRole: "admin" },
   { href: "/agents", labelKey: "aiAgents", icon: Bot, minRole: "admin" },

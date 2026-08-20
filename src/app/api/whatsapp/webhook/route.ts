@@ -864,7 +864,9 @@ async function processMessage(
       supabaseAdmin(),
       accountId,
       contactRecord.id,
-      contentText ?? ''
+      contentText ?? '',
+      contactRecord.phone,
+      contactRecord.pac_codigo
     )
     try {
       await engineSendText({

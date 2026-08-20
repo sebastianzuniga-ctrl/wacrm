@@ -6,7 +6,7 @@ import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard'
 import { renderTemplatePreview } from '@/lib/whatsapp/broadcast-core'
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation'
-import { findExistingContact } from '@/lib/contacts/dedupe'
+// import { findExistingContact } from '@/lib/contacts/dedupe' // sin uso: filtro do_not_disturb deshabilitado 2026-08-20
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
     const results: BroadcastResult[] = []
     let sentCount = 0
     let failedCount = 0
-    let skippedCount = 0
+    const skippedCount = 0
     for (const recipient of recipients) {
       const sanitized = sanitizePhoneForMeta(recipient.phone)
       if (!isValidE164(sanitized)) {
@@ -157,18 +157,20 @@ export async function POST(request: Request) {
         failedCount++
         continue
       }
-      // Ley No Molestar / SERNAC: nunca enviar una campaña a un contacto
-      // que ya escribio la frase de opt-out (o fue marcado manualmente).
-      const existingContact = await findExistingContact(supabase, accountId, sanitized)
-      if (existingContact?.do_not_disturb) {
-        results.push({
-          phone: recipient.phone,
-          status: 'skipped',
-          error: 'Contact opted out of campaigns (do not disturb)',
-        })
-        skippedCount++
-        continue
-      }
+      // Ley No Molestar / SERNAC: el filtro local do_not_disturb quedo
+      // DESHABILITADO (2026-08-20) -- fuente de verdad ahora es INO
+      // (audiencias pre-filtradas, ver src/lib/ino/no-molestar.ts).
+      //
+      // const existingContact = await findExistingContact(supabase, accountId, sanitized)
+      // if (existingContact?.do_not_disturb) {
+      //   results.push({
+      //     phone: recipient.phone,
+      //     status: 'skipped',
+      //     error: 'Contact opted out of campaigns (do not disturb)',
+      //   })
+      //   skippedCount++
+      //   continue
+      // }
       const variants = phoneVariants(sanitized)
       let sentMessageId: string | null = null
       let lastError: string | null = null
