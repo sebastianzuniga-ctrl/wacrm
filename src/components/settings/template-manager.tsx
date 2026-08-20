@@ -127,7 +127,7 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 export function TemplateManager() {
   const t = useTranslations('Settings.templates');
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
@@ -179,21 +179,21 @@ export function TemplateManager() {
 
   useEffect(() => {
     if (authLoading) return;
-    if (!user) {
+    if (!accountId) {
       setLoading(false);
       return;
     }
-    fetchTemplates(user.id);
+    fetchTemplates(accountId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authLoading, user?.id]);
+  }, [authLoading, accountId]);
 
-  async function fetchTemplates(userId: string) {
+  async function fetchTemplates(accountId: string) {
     try {
       setLoading(true);
       const { data, error } = await supabase
         .from('message_templates')
         .select('*')
-        .eq('user_id', userId)
+        .eq('account_id', accountId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       setTemplates(data || []);
@@ -280,7 +280,7 @@ export function TemplateManager() {
       }
       // Refresh first, then close — re-opening the dialog
       // immediately should not show a stale list.
-      if (user) await fetchTemplates(user.id);
+      if (accountId) await fetchTemplates(accountId);
       toast.success(
         data.dry_run
           ? isEdit
@@ -334,7 +334,7 @@ export function TemplateManager() {
           { duration: 10000 },
         );
       }
-      await fetchTemplates(user.id);
+      await fetchTemplates(accountId!);
     } catch (err) {
       console.error('Template sync error:', err);
       toast.error(err instanceof Error ? err.message : t('toastSyncError'));
