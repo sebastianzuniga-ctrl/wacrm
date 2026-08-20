@@ -15,6 +15,8 @@ import {
   X,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import Papa from 'papaparse';
+import { toast } from 'sonner';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -91,6 +93,8 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -236,6 +240,67 @@ export function Step2SelectAudience({
       value: '',
     };
     onUpdate({ ...audience, customField: { ...prev, ...patch } });
+  }
+
+  function normalizePhone(raw: string): string | null {
+    const digits = raw.replace(/[^\d]/g, '');
+    if (digits.length < 8) return null;
+    return digits;
+  }
+
+  function handleCsvFile(file: File) {
+    setCsvError(null);
+    setCsvFileName(file.name);
+    Papa.parse<Record<string, string>>(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const rows = results.data;
+        if (!rows.length) {
+          setCsvError('El archivo CSV está vacío.');
+          onUpdate({ ...audience, csvContacts: [] });
+          return;
+        }
+        const firstRowKeys = Object.keys(rows[0]);
+        const phoneKey = firstRowKeys.find((k) =>
+          ['phone', 'telefono', 'teléfono', 'celular', 'numero', 'número'].includes(
+            k.trim().toLowerCase(),
+          ),
+        );
+        const nameKey = firstRowKeys.find((k) =>
+          ['name', 'nombre'].includes(k.trim().toLowerCase()),
+        );
+        if (!phoneKey) {
+          setCsvError('No se encontró una columna de teléfono (phone / telefono / celular).');
+          onUpdate({ ...audience, csvContacts: [] });
+          return;
+        }
+        const contacts: { phone: string; name?: string }[] = [];
+        let invalid = 0;
+        for (const row of rows) {
+          const rawPhone = row[phoneKey];
+          if (!rawPhone) continue;
+          const phone = normalizePhone(String(rawPhone));
+          if (!phone) {
+            invalid++;
+            continue;
+          }
+          const name = nameKey ? row[nameKey]?.trim() : undefined;
+          contacts.push({ phone, name: name || undefined });
+        }
+        if (invalid > 0) {
+          toast.warning(`${invalid} fila(s) con teléfono inválido fueron omitidas.`);
+        }
+        if (contacts.length === 0) {
+          setCsvError('No se encontraron filas con teléfonos válidos.');
+        }
+        onUpdate({ ...audience, csvContacts: contacts });
+      },
+      error: (err) => {
+        setCsvError(err.message);
+        onUpdate({ ...audience, csvContacts: [] });
+      },
+    });
   }
 
   const isValid =
@@ -387,6 +452,36 @@ export function Step2SelectAudience({
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.csv')}</p>
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/50 px-4 py-6 text-center hover:border-primary/50">
+            <Upload className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm text-foreground">
+              {csvFileName ?? 'Subir archivo CSV'}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Columnas: phone (o telefono/celular) y name (opcional)
+            </span>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleCsvFile(file);
+              }}
+            />
+          </label>
+          {csvError && <p className="text-xs text-red-400">{csvError}</p>}
+          {audience.csvContacts && audience.csvContacts.length > 0 && !csvError && (
+            <p className="text-xs text-muted-foreground">
+              {audience.csvContacts.length} contactos cargados desde el CSV.
+            </p>
           )}
         </div>
       )}
