@@ -20,7 +20,7 @@ import { useTranslations } from 'next-intl';
 interface AudienceConfig {
   type: string;
   tagIds?: string[];
-  csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
+  csvContacts?: { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }[];
 }
 
 interface Step4Props {

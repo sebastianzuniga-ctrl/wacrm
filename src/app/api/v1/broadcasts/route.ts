@@ -85,6 +85,7 @@ export async function POST(request: Request) {
           (r?.button_params && typeof r.button_params === 'object');
         return {
           to: typeof r?.to === 'string' ? r.to : '',
+          ficha: typeof r?.ficha === 'string' ? r.ficha : undefined,
           params: Array.isArray(r?.params) ? r.params : undefined,
           messageParams: hasMessageParams
             ? {

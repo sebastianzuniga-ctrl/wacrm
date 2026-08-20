@@ -17,7 +17,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv';
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
+  csvContacts?: { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
 }
@@ -218,7 +218,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
    */
   async function upsertCsvContacts(
     supabase: ReturnType<typeof createClient>,
-    csvRows: { phone: string; name?: string; extraFields?: Record<string, string> }[],
+    csvRows: {
+      phone: string;
+      name?: string;
+      ficha?: string;
+      extraFields?: Record<string, string>;
+    }[],
   ): Promise<Contact[]> {
     if (csvRows.length === 0) return [];
 
@@ -236,7 +241,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     // De-duplicate by phone within the CSV (users can paste duplicates).
     const uniqueByPhone = new Map<
       string,
-      { phone: string; name?: string; extraFields?: Record<string, string> }
+      { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }
     >();
     for (const row of csvRows) {
       if (row.phone) uniqueByPhone.set(row.phone, row);
@@ -267,6 +272,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         account_id: accountId,
         phone,
         name: uniqueByPhone.get(phone)?.name ?? null,
+        pac_codigo: uniqueByPhone.get(phone)?.ficha ?? null,
       }));
 
     const INSERT_CHUNK = 200;
@@ -368,6 +374,20 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           );
         }
       }
+    }
+
+    // Backfill pac_codigo (ficha) on contacts that already existed but
+    // didn't have one yet -- never overwrite a ficha already on file.
+    const fichaUpdates: { id: string; ficha: string }[] = [];
+    for (const [phone, row] of uniqueByPhone.entries()) {
+      const contact = byPhone.get(phone);
+      if (!contact || !row.ficha) continue;
+      if (!(contact as unknown as { pac_codigo?: string | null }).pac_codigo) {
+        fichaUpdates.push({ id: contact.id, ficha: row.ficha });
+      }
+    }
+    for (const { id, ficha } of fichaUpdates) {
+      await supabase.from('contacts').update({ pac_codigo: ficha }).eq('id', id);
     }
 
     // Preserve input order so analytics roughly matches the CSV order.

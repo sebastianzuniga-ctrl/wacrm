@@ -31,7 +31,7 @@ interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
+  csvContacts?: { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }[];
   excludeTagIds?: string[];
 }
 
@@ -270,21 +270,27 @@ export function Step2SelectAudience({
         const nameKey = firstRowKeys.find((k) =>
           ['name', 'nombre'].includes(k.trim().toLowerCase()),
         );
+        const fichaKey = firstRowKeys.find((k) =>
+          ['ficha', 'pac_codigo', 'numero_ficha', 'nro_ficha', 'num_ficha'].includes(
+            k.trim().toLowerCase(),
+          ),
+        );
         if (!phoneKey) {
           setCsvError('No se encontró una columna de teléfono (phone / telefono / celular).');
           onUpdate({ ...audience, csvContacts: [] });
           return;
         }
-        // Any column besides phone/name is treated as a per-contact
+        // Any column besides phone/name/ficha is treated as a per-contact
         // custom field (e.g. "fecha", "tipo_cita") — captured here and
         // later upserted into custom_fields + contact_custom_values so
         // Step3 can map {{N}} to it like any other custom field.
         const extraKeys = firstRowKeys.filter(
-          (k) => k !== phoneKey && k !== nameKey && k.trim() !== '',
+          (k) => k !== phoneKey && k !== nameKey && k !== fichaKey && k.trim() !== '',
         );
         const contacts: {
           phone: string;
           name?: string;
+          ficha?: string;
           extraFields?: Record<string, string>;
         }[] = [];
         let invalid = 0;
@@ -297,6 +303,7 @@ export function Step2SelectAudience({
             continue;
           }
           const name = nameKey ? row[nameKey]?.trim() : undefined;
+          const ficha = fichaKey ? row[fichaKey]?.trim() : undefined;
           let extraFields: Record<string, string> | undefined;
           for (const k of extraKeys) {
             const v = row[k]?.trim();
@@ -305,7 +312,7 @@ export function Step2SelectAudience({
               extraFields[k.trim()] = v;
             }
           }
-          contacts.push({ phone, name: name || undefined, extraFields });
+          contacts.push({ phone, name: name || undefined, ficha: ficha || undefined, extraFields });
         }
         if (invalid > 0) {
           toast.warning(`${invalid} fila(s) con teléfono inválido fueron omitidas.`);

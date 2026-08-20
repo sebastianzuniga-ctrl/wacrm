@@ -47,6 +47,8 @@ export class BroadcastError extends Error {
 export interface BroadcastRecipientInput {
   /** E.164 phone. */
   to: string;
+  /** Numero de ficha INO (contacts.pac_codigo) -- opcional. */
+  ficha?: string | null;
   /** Positional body params for the template ({{1}}, {{2}}…). */
   params?: string[];
   /**
@@ -173,6 +175,7 @@ export async function createBroadcast(
     }
     const { id } = await findOrCreateContact(db, accountId, auditUserId, {
       phone: sanitized,
+      ficha: typeof r.ficha === 'string' ? r.ficha : null,
     });
     resolved.push({
       contactId: id,
@@ -204,30 +207,35 @@ export async function createBroadcast(
     );
   }
 
-  // Ley No Molestar / SERNAC: nunca enviar una campaña a un contacto
-  // marcado do_not_disturb=true. Se cuentan junto a `rejected` (no se
-  // les envia, igual que un telefono invalido) en vez de abortar todo
-  // el broadcast.
-  const { data: dndRows, error: dndErr } = await db
-    .from('contacts')
-    .select('id, do_not_disturb')
-    .in('id', deduped.map((r) => r.contactId));
-  if (dndErr) {
-    console.error('[broadcast-core] failed to check do_not_disturb flags:', dndErr);
-    throw new BroadcastError('internal', 'Failed to validate recipients', 500);
-  }
-  const dndContactIds = new Set(
-    (dndRows ?? []).filter((c) => c.do_not_disturb).map((c) => c.id as string)
-  );
-  const filtered = deduped.filter((r) => !dndContactIds.has(r.contactId));
-  rejected += deduped.length - filtered.length;
-  if (filtered.length === 0) {
-    throw new BroadcastError(
-      'bad_request',
-      'All recipients are marked do_not_disturb (opted out of campaigns)',
-      400
-    );
-  }
+  // Ley No Molestar / SERNAC: el filtro local do_not_disturb quedo
+  // DESHABILITADO (2026-08-20) -- la fuente de verdad paso a ser el
+  // sistema INO. Las audiencias de campaña ahora se suben ya
+  // pre-filtradas desde INO, y el opt-out via WhatsApp se notifica a
+  // INO directamente (ver src/lib/ino/no-molestar.ts +
+  // src/lib/whatsapp/dnd.ts). Se deja el bloque comentado en vez de
+  // borrarlo por si hay que revertir esta decision.
+  //
+  // const { data: dndRows, error: dndErr } = await db
+  //   .from('contacts')
+  //   .select('id, do_not_disturb')
+  //   .in('id', deduped.map((r) => r.contactId));
+  // if (dndErr) {
+  //   console.error('[broadcast-core] failed to check do_not_disturb flags:', dndErr);
+  //   throw new BroadcastError('internal', 'Failed to validate recipients', 500);
+  // }
+  // const dndContactIds = new Set(
+  //   (dndRows ?? []).filter((c) => c.do_not_disturb).map((c) => c.id as string)
+  // );
+  // const filtered = deduped.filter((r) => !dndContactIds.has(r.contactId));
+  // rejected += deduped.length - filtered.length;
+  // if (filtered.length === 0) {
+  //   throw new BroadcastError(
+  //     'bad_request',
+  //     'All recipients are marked do_not_disturb (opted out of campaigns)',
+  //     400
+  //   );
+  // }
+  const filtered = deduped;
 
   // Persist the broadcast + its recipients. The count columns
   // (sent/delivered/read/replied/failed) are owned by the DB aggregate

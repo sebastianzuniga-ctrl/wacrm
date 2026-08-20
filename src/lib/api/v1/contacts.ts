@@ -99,6 +99,9 @@ export interface ContactInput {
   name?: string | null;
   email?: string | null;
   company?: string | null;
+  /** Numero de ficha INO (contacts.pac_codigo) -- opcional, usado por
+   *  la integracion de No Molestar con el sistema INO. */
+  ficha?: string | null;
 }
 
 /**
@@ -122,7 +125,15 @@ export async function findOrCreateContact(
   }
 
   const existing = await findExistingContact(db, accountId, sanitized);
-  if (existing) return { id: existing.id, created: false };
+  if (existing) {
+    // Backfill pac_codigo on an existing contact that didn't have one
+    // yet -- never overwrite a ficha already on file, since a later
+    // send without 'ficha' shouldn't erase a value set earlier.
+    if (input.ficha && !(existing as { pac_codigo?: string | null }).pac_codigo) {
+      await db.from('contacts').update({ pac_codigo: input.ficha }).eq('id', existing.id);
+    }
+    return { id: existing.id, created: false };
+  }
 
   const { data: created, error } = await db
     .from('contacts')
@@ -133,6 +144,7 @@ export async function findOrCreateContact(
       name: input.name ?? sanitized,
       email: input.email ?? null,
       company: input.company ?? null,
+      pac_codigo: input.ficha ?? null,
     })
     .select('id')
     .single();
