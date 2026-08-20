@@ -31,7 +31,7 @@ interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string }[];
+  csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
   excludeTagIds?: string[];
 }
 
@@ -275,7 +275,18 @@ export function Step2SelectAudience({
           onUpdate({ ...audience, csvContacts: [] });
           return;
         }
-        const contacts: { phone: string; name?: string }[] = [];
+        // Any column besides phone/name is treated as a per-contact
+        // custom field (e.g. "fecha", "tipo_cita") — captured here and
+        // later upserted into custom_fields + contact_custom_values so
+        // Step3 can map {{N}} to it like any other custom field.
+        const extraKeys = firstRowKeys.filter(
+          (k) => k !== phoneKey && k !== nameKey && k.trim() !== '',
+        );
+        const contacts: {
+          phone: string;
+          name?: string;
+          extraFields?: Record<string, string>;
+        }[] = [];
         let invalid = 0;
         for (const row of rows) {
           const rawPhone = row[phoneKey];
@@ -286,7 +297,15 @@ export function Step2SelectAudience({
             continue;
           }
           const name = nameKey ? row[nameKey]?.trim() : undefined;
-          contacts.push({ phone, name: name || undefined });
+          let extraFields: Record<string, string> | undefined;
+          for (const k of extraKeys) {
+            const v = row[k]?.trim();
+            if (v) {
+              extraFields = extraFields ?? {};
+              extraFields[k.trim()] = v;
+            }
+          }
+          contacts.push({ phone, name: name || undefined, extraFields });
         }
         if (invalid > 0) {
           toast.warning(`${invalid} fila(s) con teléfono inválido fueron omitidas.`);
@@ -465,7 +484,9 @@ export function Step2SelectAudience({
               {csvFileName ?? 'Subir archivo CSV'}
             </span>
             <span className="text-xs text-muted-foreground">
-              Columnas: phone (o telefono/celular) y name (opcional)
+              Columnas: phone (o telefono/celular) y name (opcional). Cualquier
+              otra columna (ej: fecha, tipo_cita) queda disponible como
+              variable personalizada en el paso de Personalizar.
             </span>
             <input
               type="file"
@@ -479,9 +500,23 @@ export function Step2SelectAudience({
           </label>
           {csvError && <p className="text-xs text-red-400">{csvError}</p>}
           {audience.csvContacts && audience.csvContacts.length > 0 && !csvError && (
-            <p className="text-xs text-muted-foreground">
-              {audience.csvContacts.length} contactos cargados desde el CSV.
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">
+                {audience.csvContacts.length} contactos cargados desde el CSV.
+              </p>
+              {(() => {
+                const extraKeys = new Set<string>();
+                for (const c of audience.csvContacts) {
+                  for (const k of Object.keys(c.extraFields ?? {})) extraKeys.add(k);
+                }
+                if (extraKeys.size === 0) return null;
+                return (
+                  <p className="text-xs text-muted-foreground">
+                    Columnas extra detectadas: {[...extraKeys].join(', ')}
+                  </p>
+                );
+              })()}
+            </div>
           )}
         </div>
       )}

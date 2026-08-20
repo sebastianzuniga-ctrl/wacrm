@@ -17,7 +17,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv';
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string }[];
+  csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
 }
@@ -218,7 +218,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
    */
   async function upsertCsvContacts(
     supabase: ReturnType<typeof createClient>,
-    csvRows: { phone: string; name?: string }[],
+    csvRows: { phone: string; name?: string; extraFields?: Record<string, string> }[],
   ): Promise<Contact[]> {
     if (csvRows.length === 0) return [];
 
@@ -234,7 +234,10 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     }
 
     // De-duplicate by phone within the CSV (users can paste duplicates).
-    const uniqueByPhone = new Map<string, { phone: string; name?: string }>();
+    const uniqueByPhone = new Map<
+      string,
+      { phone: string; name?: string; extraFields?: Record<string, string> }
+    >();
     for (const row of csvRows) {
       if (row.phone) uniqueByPhone.set(row.phone, row);
     }
@@ -278,6 +281,92 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
       for (const c of (inserted ?? []) as Contact[]) {
         if (c.phone) byPhone.set(c.phone, c);
+      }
+    }
+
+    // ── Extra CSV columns (e.g. "fecha", "tipo_cita") become per-contact
+    // custom fields, reusing the same custom_fields / contact_custom_values
+    // infrastructure that Step3's "custom field" variable type already
+    // reads from — no new UI mechanism needed.
+    const extraFieldNames = new Set<string>();
+    for (const row of uniqueByPhone.values()) {
+      for (const key of Object.keys(row.extraFields ?? {})) {
+        extraFieldNames.add(key);
+      }
+    }
+
+    if (extraFieldNames.size > 0) {
+      const { data: existingFields, error: fieldsLookupErr } = await supabase
+        .from('custom_fields')
+        .select('id, field_name')
+        .eq('account_id', accountId);
+      if (fieldsLookupErr) {
+        throw new Error(
+          `Failed to look up custom fields: ${fieldsLookupErr.message}`,
+        );
+      }
+
+      const fieldIdByName = new Map<string, string>();
+      for (const f of existingFields ?? []) {
+        fieldIdByName.set(f.field_name.trim().toLowerCase(), f.id);
+      }
+
+      const missingFieldNames = [...extraFieldNames].filter(
+        (name) => !fieldIdByName.has(name.toLowerCase()),
+      );
+      if (missingFieldNames.length > 0) {
+        const { data: createdFields, error: createFieldsErr } = await supabase
+          .from('custom_fields')
+          .insert(
+            missingFieldNames.map((name) => ({
+              field_name: name,
+              field_type: 'text',
+              user_id: user.id,
+              account_id: accountId,
+            })),
+          )
+          .select('id, field_name');
+        if (createFieldsErr) {
+          // Most likely cause: the signed-in user isn't admin — creating
+          // custom_fields requires admin per RLS. Surface that plainly
+          // instead of a raw Postgres error.
+          throw new Error(
+            `No se pudieron crear los campos personalizados del CSV (${missingFieldNames.join(', ')}). ` +
+              `Verificá que tu usuario tenga rol de administrador. Detalle: ${createFieldsErr.message}`,
+          );
+        }
+        for (const f of createdFields ?? []) {
+          fieldIdByName.set(f.field_name.trim().toLowerCase(), f.id);
+        }
+      }
+
+      // Upsert one contact_custom_values row per (contact, extra column).
+      const valueRows: { contact_id: string; custom_field_id: string; value: string }[] = [];
+      for (const [phone, row] of uniqueByPhone.entries()) {
+        const contact = byPhone.get(phone);
+        if (!contact || !row.extraFields) continue;
+        for (const [key, value] of Object.entries(row.extraFields)) {
+          const fieldId = fieldIdByName.get(key.toLowerCase());
+          if (!fieldId) continue;
+          valueRows.push({
+            contact_id: contact.id,
+            custom_field_id: fieldId,
+            value,
+          });
+        }
+      }
+
+      const VALUE_CHUNK = 200;
+      for (let i = 0; i < valueRows.length; i += VALUE_CHUNK) {
+        const chunk = valueRows.slice(i, i + VALUE_CHUNK);
+        const { error: valuesErr } = await supabase
+          .from('contact_custom_values')
+          .upsert(chunk, { onConflict: 'contact_id,custom_field_id' });
+        if (valuesErr) {
+          throw new Error(
+            `Failed to save CSV custom field values: ${valuesErr.message}`,
+          );
+        }
       }
     }
 

@@ -37,7 +37,7 @@ export default function NewBroadcastPage() {
       operator: 'is' | 'is_not' | 'contains';
       value: string;
     };
-    csvContacts?: { phone: string; name?: string }[];
+    csvContacts?: { phone: string; name?: string; extraFields?: Record<string, string> }[];
     excludeTagIds?: string[];
   }>({ type: 'all' });
   const [variables, setVariables] = useState<
