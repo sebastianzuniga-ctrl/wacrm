@@ -496,11 +496,33 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
       // ── Step 3: Insert recipient rows ─────────────────────────────
       setProgress(20);
-      const recipientRows = contacts.map((contact) => ({
-        broadcast_id: broadcast.id,
-        contact_id: contact.id,
-        status: 'pending' as const,
-      }));
+      // For CSV audiences, carry each row's ficha onto its own
+      // broadcast_recipients row (not just onto contacts.pac_codigo) --
+      // needed so a later "SI" reply can lock in exactly the ficha THIS
+      // campaign was sent under, even if the contact's phone is shared
+      // across family members with different fichas.
+      const fichaByPhone = new Map<string, string>();
+      if (payload.audience.type === 'csv' && payload.audience.csvContacts) {
+        for (const row of payload.audience.csvContacts) {
+          if (row.ficha) {
+            const digits = row.phone.replace(/\D/g, '');
+            if (digits) fichaByPhone.set(digits, row.ficha);
+          }
+        }
+      }
+      const recipientRows = contacts.map((contact) => {
+        const contactDigits = (contact.phone ?? '').replace(/\D/g, '');
+        const ficha =
+          fichaByPhone.get(contactDigits) ??
+          fichaByPhone.get(contactDigits.slice(-8)) ??
+          null;
+        return {
+          broadcast_id: broadcast.id,
+          contact_id: contact.id,
+          status: 'pending' as const,
+          ficha,
+        };
+      });
 
       for (let i = 0; i < recipientRows.length; i += INSERT_BATCH_SIZE) {
         const batch = recipientRows.slice(i, i + INSERT_BATCH_SIZE);

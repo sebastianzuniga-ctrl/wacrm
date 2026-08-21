@@ -163,6 +163,7 @@ export async function createBroadcast(
   const resolved: {
     contactId: string;
     phone: string;
+    ficha: string | null;
     params: string[];
     messageParams?: BroadcastRecipientInput['messageParams'];
   }[] = [];
@@ -173,13 +174,15 @@ export async function createBroadcast(
       rejected++;
       continue;
     }
+    const ficha = typeof r.ficha === 'string' ? r.ficha : null;
     const { id } = await findOrCreateContact(db, accountId, auditUserId, {
       phone: sanitized,
-      ficha: typeof r.ficha === 'string' ? r.ficha : null,
+      ficha,
     });
     resolved.push({
       contactId: id,
       phone: sanitized,
+      ficha,
       params: Array.isArray(r.params)
         ? r.params.filter((p): p is string => typeof p === 'string')
         : [],
@@ -270,6 +273,7 @@ export async function createBroadcast(
         broadcast_id: broadcast.id,
         contact_id: r.contactId,
         status: 'pending' as const,
+        ficha: r.ficha,
       }))
     )
     .select('id, contact_id');

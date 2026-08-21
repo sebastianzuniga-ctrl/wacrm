@@ -9,6 +9,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { resolvePatientForContact } from '@/lib/ino/resolve-patient'
+import { applyCampaignFicha } from '@/lib/ino/campaign-ficha'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { dispatchBroadcastReplyRule } from '@/lib/whatsapp/broadcast-reply-rules'
 import { isOptOutPhrase, markContactDoNotDisturb } from '@/lib/whatsapp/dnd'
@@ -531,10 +532,18 @@ async function handleStatusUpdate(status: {
  * Runs on a best-effort basis — failures here must not break the
  * main inbound-message flow, so errors are swallowed with a log.
  */
+interface BroadcastReplyInfo {
+  templateName: string | null
+  /** Ficha this SPECIFIC campaign send was associated with, if any --
+   *  distinct from contacts.pac_codigo, which may reflect a different
+   *  (possibly stale, possibly a family member's) resolution. */
+  ficha: string | null
+}
+
 async function flagBroadcastReplyIfAny(
   accountId: string,
   contactId: string
-): Promise<string | null> {
+): Promise<BroadcastReplyInfo | null> {
   try {
     // Most recent outbound broadcast in this account that hasn't
     // been replied to yet. Account-scoped so a shared inbox reply
@@ -542,7 +551,7 @@ async function flagBroadcastReplyIfAny(
     // sent it.
     const { data: recs, error } = await supabaseAdmin()
       .from('broadcast_recipients')
-      .select('id, status, broadcast_id, broadcasts!inner(account_id, template_name)')
+      .select('id, status, ficha, broadcast_id, broadcasts!inner(account_id, template_name)')
       .eq('contact_id', contactId)
       .eq('broadcasts.account_id', accountId)
       .in('status', ['sent', 'delivered', 'read'])
@@ -568,10 +577,11 @@ async function flagBroadcastReplyIfAny(
       | { template_name?: string | null }
       | { template_name?: string | null }[]
       | null
-    if (Array.isArray(broadcastRel)) {
-      return broadcastRel[0]?.template_name ?? null
-    }
-    return broadcastRel?.template_name ?? null
+    const templateName = Array.isArray(broadcastRel)
+      ? (broadcastRel[0]?.template_name ?? null)
+      : (broadcastRel?.template_name ?? null)
+
+    return { templateName, ficha: (row as { ficha?: string | null }).ficha ?? null }
   } catch (err) {
     console.error('flagBroadcastReplyIfAny failed:', err)
     return null
@@ -890,12 +900,30 @@ async function processMessage(
     contactRecord.id
   )
   if (repliedBroadcastTemplate && interactiveReplyId) {
+    // "SI" confirma la campaña -- la ficha con la que se envio ESTA
+    // campaña puntual pisa cualquier pac_codigo que el contacto ya
+    // tuviera (mas confiable que una resolucion por telefono vieja o
+    // de un familiar). Comparacion case-insensitive por seguridad.
+    if (
+      interactiveReplyId.trim().toLowerCase() === 'si' &&
+      repliedBroadcastTemplate.ficha
+    ) {
+      try {
+        await applyCampaignFicha(
+          contactRecord.id,
+          senderPhone,
+          repliedBroadcastTemplate.ficha
+        )
+      } catch (err) {
+        console.error('[webhook] applyCampaignFicha failed:', err)
+      }
+    }
     await dispatchBroadcastReplyRule({
       accountId,
       userId: configOwnerUserId,
       contactId: contactRecord.id,
       conversationId: conversation.id,
-      templateName: repliedBroadcastTemplate,
+      templateName: repliedBroadcastTemplate.templateName ?? '',
       replyValue: interactiveReplyId,
     })
   }
