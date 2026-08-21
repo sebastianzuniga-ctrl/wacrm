@@ -145,13 +145,18 @@ async function syncBotinoSesion(
       })),
     );
     await db.query(
-      `INSERT INTO sesiones (wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
+      // El historial tambien se resetea: un pac_codigo distinto al que
+      // ya habia (o una primera resolucion) implica identidad nueva --
+      // el bot no deberia arrastrar contexto de conversacion de otro
+      // paciente que haya usado este mismo telefono antes.
+      `INSERT INTO sesiones (wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, historial, updated_at)
+       VALUES ($1, $2, $3, $4, $5, '[]', NOW())
        ON CONFLICT (wa_id) DO UPDATE SET
          pac_codigo = EXCLUDED.pac_codigo,
          pac_nombre = EXCLUDED.pac_nombre,
          pac_apellido = EXCLUDED.pac_apellido,
          pacientes_lista = EXCLUDED.pacientes_lista,
+         historial = '[]',
          updated_at = NOW()`,
       [waId, data.pac_codigo, data.pac_nombre, data.pac_apellido, pacientesJson],
     );

@@ -65,14 +65,18 @@ async function syncBotinoSesion(
   const db = getPool();
   if (!db) return;
   try {
+    // El historial de chat tambien se resetea: es la conversacion de
+    // OTRA identidad (ficha vieja), no debe seguir apareciendole al bot
+    // como contexto de la persona recien confirmada por campaña.
     await db.query(
-      `INSERT INTO sesiones (wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, updated_at)
-       VALUES ($1, $2, $3, $4, '[]', NOW())
+      `INSERT INTO sesiones (wa_id, pac_codigo, pac_nombre, pac_apellido, pacientes_lista, historial, updated_at)
+       VALUES ($1, $2, $3, $4, '[]', '[]', NOW())
        ON CONFLICT (wa_id) DO UPDATE SET
          pac_codigo = EXCLUDED.pac_codigo,
          pac_nombre = COALESCE(EXCLUDED.pac_nombre, sesiones.pac_nombre),
          pac_apellido = COALESCE(EXCLUDED.pac_apellido, sesiones.pac_apellido),
          pacientes_lista = '[]',
+         historial = '[]',
          updated_at = NOW()`,
       [waId, ficha, pacNombre, pacApellido],
     );
