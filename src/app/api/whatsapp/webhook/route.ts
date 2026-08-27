@@ -1022,7 +1022,15 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
-  if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+  // Interactive taps normally skip the LLM entirely -- a broadcast-reply
+  // match (repliedBroadcastTemplate) or the Flow runner owns them
+  // deterministically. But when a button tap arrives for a broadcast
+  // reply wacrm has no record of anymore (contact_id lost to a cascade
+  // delete, or the template was sent outside wacrm) neither system has
+  // anything to act on, and the customer's tap would otherwise go
+  // completely unanswered. Fall through to the AI in that specific gap.
+  const interactiveOrphaned = !!interactiveReplyId && !repliedBroadcastTemplate
+  if (!flowConsumed && (!interactiveReplyId || interactiveOrphaned) && inboundText.trim()) {
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
