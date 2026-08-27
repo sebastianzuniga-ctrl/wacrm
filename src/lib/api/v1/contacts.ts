@@ -160,7 +160,48 @@ export async function findOrCreateContact(
     throw new ContactError('Failed to create contact', 500);
   }
 
+  // Contacto creado "pelado" (sin ficha ni nombre en el input) --
+  // arranca con el telefono como nombre, como en el caso que motivo
+  // esto: un broadcast disparado por API/JSON que solo trae numeros.
+  // Best-effort, fire-and-forget: si INO tiene EXACTAMENTE un
+  // paciente para este telefono, lo vinculamos solo (ficha + nombre
+  // real). Ambiguo (2+ pacientes) o sin match -> se deja para
+  // revision manual en Contactos, nunca adivinamos.
+  if (!input.ficha && !input.name) {
+    void autoLinkFichaByPhone(db, created.id, sanitized);
+  }
+
   return { id: created.id, created: true };
+}
+
+async function autoLinkFichaByPhone(
+  db: SupabaseClient,
+  contactId: string,
+  sanitizedPhone: string
+): Promise<void> {
+  try {
+    const { lookupPacienteByPhone } = await import('@/lib/ino/paciente');
+    const result = await lookupPacienteByPhone(sanitizedPhone);
+    if (!result.ok) return;
+    // Dedup por pac_codigo -- INO puede devolver una fila por cada
+    // telefono registrado del mismo paciente.
+    const unique = new Map(result.pacientes.map((p) => [p.pac_codigo, p]));
+    if (unique.size !== 1) return; // ambiguo o sin match: no adivinar
+    const paciente = [...unique.values()][0];
+    const nombreCompleto = [
+      paciente.pac_nombre,
+      paciente.pac_apellido,
+      paciente.pac_apellido_materno,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    await db
+      .from('contacts')
+      .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto })
+      .eq('id', contactId);
+  } catch (err) {
+    console.error('[autoLinkFichaByPhone] failed:', err);
+  }
 }
 
 /**
