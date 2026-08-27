@@ -87,6 +87,10 @@ export function ContactForm({
   const [fichaError, setFichaError] = useState<string | null>(null);
   const [fichaResults, setFichaResults] = useState<FichaCandidato[] | null>(null);
   const [manualMode, setManualMode] = useState(false);
+  // Ficha ya vinculada al contacto (persistida en contacts.pac_codigo).
+  // En modo edición se precarga y se puede revalidar/reemplazar buscando
+  // de nuevo -- misma búsqueda que en creación, distinto punto de partida.
+  const [pacCodigo, setPacCodigo] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -99,7 +103,11 @@ export function ContactForm({
       setFicha('');
       setFichaError(null);
       setFichaResults(null);
-      setManualMode(false);
+      // En edición, si ya tiene ficha vinculada partimos en modo manual
+      // (la ficha actual se muestra arriba con opción de revalidar);
+      // sin ficha previa, arranca igual que creación: buscador abierto.
+      setManualMode(isEdit && !!contact?.pac_codigo);
+      setPacCodigo(contact?.pac_codigo ?? null);
       fetchTags();
     }
   }, [open, contact]);
@@ -152,6 +160,7 @@ export function ContactForm({
     if (candidato.telefono) setPhone(candidato.telefono);
     if (candidato.email) setEmail(candidato.email);
     if (candidato.telefono) checkDuplicateFor(candidato.telefono);
+    setPacCodigo(candidato.ficha);
   }
 
   // Look up an existing contact with this number (new contacts only).
@@ -235,6 +244,7 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            pac_codigo: pacCodigo,
             updated_at: new Date().toISOString(),
           })
           .eq('id', contactId);
@@ -249,6 +259,7 @@ export function ContactForm({
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,
+            pac_codigo: pacCodigo,
           })
           .select('id')
           .single();
@@ -313,7 +324,22 @@ export function ContactForm({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {!isEdit && !manualMode && (
+          {isEdit && manualMode && pacCodigo && (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 p-3">
+              <div>
+                <p className="text-xs text-muted-foreground">{t('fichaLabel')}</p>
+                <p className="text-sm font-medium text-foreground">{pacCodigo}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualMode(false)}
+                className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                {t('fichaRevalidate')}
+              </button>
+            </div>
+          )}
+          {!manualMode && (
             <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
               <Label htmlFor="cf-ficha" className="text-muted-foreground">
                 {t('fichaLabel')}

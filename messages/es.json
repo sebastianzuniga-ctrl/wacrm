@@ -366,6 +366,7 @@
       "fichaEstadoTemporal": "Temporal",
       "fichaNoPhone": "Sin teléfono registrado",
       "fichaUseManual": "Prefiero ingresar los datos manualmente",
+      "fichaRevalidate": "Cambiar o revalidar ficha",
       "editTitle": "Editar contacto",
       "editDesc": "Actualiza los datos y las etiquetas del contacto.",
       "nameLabel": "Nombre",

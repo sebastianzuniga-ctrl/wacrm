@@ -114,6 +114,9 @@ export interface Contact {
   /** Hydrated by queries that embed `contact_tags(tags(*))` (e.g. the
    *  Inbox conversation list, for tag filtering). Absent otherwise. */
   tags?: Tag[];
+  /** Ficha INO (pac_codigo) linked to this contact, if any. Resolved via
+   *  DentWeb lookup (getPacientes.jsp) -- see src/lib/ino/paciente.ts. */
+  pac_codigo?: string | null;
 }
 
 export interface Tag {
