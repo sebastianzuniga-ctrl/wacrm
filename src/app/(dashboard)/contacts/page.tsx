@@ -50,6 +50,7 @@ import {
   SlidersHorizontal,
   Filter,
   X,
+  RefreshCw,
 } from 'lucide-react';
 import { ContactForm } from '@/components/contacts/contact-form';
 import { ContactDetailView } from '@/components/contacts/contact-detail-view';
@@ -87,6 +88,7 @@ function ContactsPageInner() {
   const [detailContactId, setDetailContactId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [customFieldsOpen, setCustomFieldsOpen] = useState(false);
+  const [resolvingIno, setResolvingIno] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -223,6 +225,28 @@ function ContactsPageInner() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  async function handleResolveIno() {
+    setResolvingIno(true);
+    try {
+      const res = await fetch('/api/contacts/resolve-ino', { method: 'POST' });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? t('resolveInoError'));
+      toast.success(
+        t('resolveInoDone', {
+          updated: body.updated ?? 0,
+          skipped: body.skipped ?? 0,
+          failed: body.failed ?? 0,
+          total: body.total ?? 0,
+        })
+      );
+      fetchContacts();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('resolveInoError'));
+    } finally {
+      setResolvingIno(false);
+    }
+  }
 
   function openAddForm() {
     setEditContact(null);
@@ -361,6 +385,17 @@ function ContactsPageInner() {
               {t('customFieldsBtn')}
             </Button>
           )}
+          <GatedButton
+            variant="outline"
+            canAct={canEdit}
+            gateReason="add or import contacts"
+            onClick={handleResolveIno}
+            disabled={resolvingIno}
+            className="border-border text-muted-foreground hover:bg-muted"
+          >
+            <RefreshCw className={`size-4 ${resolvingIno ? 'animate-spin' : ''}`} />
+            {resolvingIno ? t('resolveInoRunning') : t('resolveInoBtn')}
+          </GatedButton>
           <GatedButton
             variant="outline"
             canAct={canEdit}

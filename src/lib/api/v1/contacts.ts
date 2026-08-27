@@ -169,9 +169,31 @@ export async function findOrCreateContact(
   // revision manual en Contactos, nunca adivinamos.
   if (!input.ficha && !input.name) {
     void autoLinkFichaByPhone(db, created.id, sanitized);
+  } else if (input.ficha && !input.name) {
+    // Caso real detectado 2026-08-27: la campaña trae 'ficha' (ya
+    // resuelta por quien la disparo) pero no 'name' -- sin
+    // ambiguedad posible aqui, no hace falta pasar por telefono.
+    void autoLinkNameByFicha(db, created.id, input.ficha);
   }
 
   return { id: created.id, created: true };
+}
+
+async function autoLinkNameByFicha(
+  db: SupabaseClient,
+  contactId: string,
+  ficha: string
+): Promise<void> {
+  try {
+    const { getPacienteByFicha } = await import('@/lib/ino/paciente');
+    const detalles = await getPacienteByFicha(ficha);
+    if (detalles.length === 0) return;
+    const nombreCompleto = detalles[0].nombreCompleto;
+    if (!nombreCompleto) return;
+    await db.from('contacts').update({ name: nombreCompleto }).eq('id', contactId);
+  } catch (err) {
+    console.error('[autoLinkNameByFicha] failed:', err);
+  }
 }
 
 async function autoLinkFichaByPhone(
