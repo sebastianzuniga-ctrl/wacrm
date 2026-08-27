@@ -159,7 +159,12 @@ export function ConversationList({
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+        // nullsFirst: false -- Postgres' default for DESC is NULLS
+        // FIRST, so a conversation with no messages yet (last_message_at
+        // IS NULL, e.g. right after a broadcast creates the contact)
+        // would otherwise always float to the top, burying threads with
+        // real, recent activity below every empty one.
+        .order("last_message_at", { ascending: false, nullsFirst: false });
 
       if (cancelled) return;
 

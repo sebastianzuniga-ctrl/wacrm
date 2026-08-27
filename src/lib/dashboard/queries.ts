@@ -466,7 +466,11 @@ export async function loadMyTickets(
     )
     .eq('assigned_agent_id', userId)
     .in('status', ['open', 'pending'])
-    .order('last_message_at', { ascending: false })
+    // nullsFirst: false -- ver mismo fix en conversation-list.tsx
+    // (2026-08-27): sin esto, un ticket recien creado sin mensajes
+    // (last_message_at NULL) queda primero en DESC y puede empujar
+    // tickets con actividad real fuera de este limit(20).
+    .order('last_message_at', { ascending: false, nullsFirst: false })
     .limit(limit)
 
   if (error || !data) return []
