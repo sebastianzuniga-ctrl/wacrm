@@ -240,8 +240,14 @@ function InboxPageInner() {
         // knownConvIdsRef for why a closure flag inside the updater would
         // always read false here.
         if (knownConvIdsRef.current.has(newMsg.conversation_id)) {
-          setConversations((prev) =>
-            prev.map((c) =>
+          setConversations((prev) => {
+            // .map() preserves array order -- patching last_message_at
+            // in place left the conversation sitting at its old
+            // position until the next 12s poll re-sorted from the DB,
+            // so a fresh reply could sit buried below older threads.
+            // Re-sort here so the list reflects the new activity
+            // immediately, same order as the initial fetch (desc).
+            const updated = prev.map((c) =>
               c.id === newMsg.conversation_id
                 ? {
                     ...c,
@@ -253,8 +259,13 @@ function InboxPageInner() {
                         : c.unread_count + 1,
                   }
                 : c,
-            ),
-          );
+            );
+            return [...updated].sort((a, b) => {
+              const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+              const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+              return tb - ta;
+            });
+          });
         } else {
           // First time we're seeing this conv: the conv-INSERT event
           // hasn't landed yet, or was missed. Hydrate from the DB so
