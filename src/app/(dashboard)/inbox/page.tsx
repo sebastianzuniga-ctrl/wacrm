@@ -318,8 +318,17 @@ function InboxPageInner() {
           // back on for the ~100ms it takes for the reset effect's server
           // UPDATE to round-trip. Non-active convs take the value as-is.
           const isActive = activeConversation?.id === conv.id;
-          setConversations((prev) =>
-            prev.map((c) =>
+          setConversations((prev) => {
+            // Same reorder issue as the inbound-message patch above:
+            // .map() keeps the array's existing order, so a realtime
+            // UPDATE on `conversations` (this is the one that actually
+            // carries the fresh last_message_at from the webhook) could
+            // patch the row's timestamp without moving it -- letting a
+            // later 12s poll (which re-sorts from the DB, where the
+            // timestamp IS correct) look like it "sent the conversation
+            // back down" when in fact this in-place patch just never
+            // reflected the new order to begin with.
+            const updated = prev.map((c) =>
               c.id === conv.id
                 ? {
                     ...c,
@@ -327,8 +336,13 @@ function InboxPageInner() {
                     unread_count: isActive ? 0 : conv.unread_count,
                   }
                 : c,
-            ),
-          );
+            );
+            return [...updated].sort((a, b) => {
+              const ta = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+              const tb = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+              return tb - ta;
+            });
+          });
         } else {
           // UPDATE arrived before the INSERT (or after a missed INSERT)
           // — fetch the row so it surfaces with its contact joined. The
