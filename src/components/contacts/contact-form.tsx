@@ -35,6 +35,16 @@ interface FichaCandidato {
   estado: string;
 }
 
+// Shape devuelto por /api/ino-paciente-telefono (distinto al de
+// ficha: sin teléfono/email/estado, ya que la búsqueda parte del
+// teléfono que el contacto ya tiene).
+interface PacienteTelefonoCandidato {
+  pac_codigo: string;
+  pac_nombre: string;
+  pac_apellido: string;
+  pac_apellido_materno: string | null;
+}
+
 interface ContactFormProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -88,9 +98,16 @@ export function ContactForm({
   const [fichaResults, setFichaResults] = useState<FichaCandidato[] | null>(null);
   const [manualMode, setManualMode] = useState(false);
   // Ficha ya vinculada al contacto (persistida en contacts.pac_codigo).
-  // En modo edición se precarga y se puede revalidar/reemplazar buscando
-  // de nuevo -- misma búsqueda que en creación, distinto punto de partida.
+  // En modo edición se precarga y se valida automáticamente contra INO
+  // por número de teléfono (no se pide ficha manualmente en este modo).
   const [pacCodigo, setPacCodigo] = useState<string | null>(null);
+
+  // Validación automática por teléfono (solo modo edición). Se dispara
+  // al abrir el modal, no al tipear -- confirma o marca desajuste entre
+  // el pac_codigo guardado y lo que INO reporta para este número.
+  const [telefonoResults, setTelefonoResults] = useState<PacienteTelefonoCandidato[] | null>(null);
+  const [telefonoSearching, setTelefonoSearching] = useState(false);
+  const [telefonoError, setTelefonoError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -103,14 +120,53 @@ export function ContactForm({
       setFicha('');
       setFichaError(null);
       setFichaResults(null);
-      // En edición, si ya tiene ficha vinculada partimos en modo manual
-      // (la ficha actual se muestra arriba con opción de revalidar);
-      // sin ficha previa, arranca igual que creación: buscador abierto.
-      setManualMode(isEdit && !!contact?.pac_codigo);
+      // En edición no se pide ficha manualmente -- se valida sola
+      // contra INO por teléfono, ver efecto de abajo. En creación el
+      // buscador de ficha sigue abierto por defecto.
+      setManualMode(isEdit);
       setPacCodigo(contact?.pac_codigo ?? null);
+      setTelefonoResults(null);
+      setTelefonoError(null);
       fetchTags();
     }
   }, [open, contact]);
+
+  // Validación automática por teléfono, solo en modo edición y solo al
+  // abrir (no en cada tecla) -- confirma o marca desajuste de ficha.
+  useEffect(() => {
+    if (open && isEdit && contact?.phone) {
+      handleBuscarPorTelefono(contact.phone);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit, contact?.phone]);
+
+  async function handleBuscarPorTelefono(phoneValue: string) {
+    const value = phoneValue.trim();
+    if (!value) return;
+    setTelefonoSearching(true);
+    setTelefonoError(null);
+    setTelefonoResults(null);
+    try {
+      const res = await fetch(`/api/ino-paciente-telefono?phone=${encodeURIComponent(value)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? 'Error al validar en INO');
+      // DENT puede devolver una fila por cada teléfono registrado del
+      // mismo paciente -- deduplicar por pac_codigo, solo nos importa
+      // a qué paciente vincular, no cuántos teléfonos tiene.
+      const raw: PacienteTelefonoCandidato[] = body.pacientes ?? [];
+      const seen = new Set<string>();
+      const deduped = raw.filter((p) => {
+        if (seen.has(p.pac_codigo)) return false;
+        seen.add(p.pac_codigo);
+        return true;
+      });
+      setTelefonoResults(deduped);
+    } catch (err) {
+      setTelefonoError(err instanceof Error ? err.message : t('fichaError'));
+    } finally {
+      setTelefonoSearching(false);
+    }
+  }
 
   async function handleBuscarFicha() {
     const value = ficha.trim();
@@ -324,22 +380,90 @@ export function ContactForm({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {isEdit && manualMode && pacCodigo && (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/30 p-3">
-              <div>
-                <p className="text-xs text-muted-foreground">{t('fichaLabel')}</p>
-                <p className="text-sm font-medium text-foreground">{pacCodigo}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setManualMode(false)}
-                className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-              >
-                {t('fichaRevalidate')}
-              </button>
+          {isEdit && (
+            <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+              <p className="text-xs text-muted-foreground">{t('fichaLabel')}</p>
+
+              {/* Ficha actual: siempre visible, no depende de que la
+                  validación ya haya terminado -- lo que cambia es el
+                  ESTADO (validando / coincide / no coincide) debajo. */}
+              <p className="text-sm font-medium text-foreground">
+                {pacCodigo ?? t('fichaAutoNone')}
+              </p>
+
+              {telefonoSearching && (
+                <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t('fichaAutoValidating')}
+                </p>
+              )}
+
+              {telefonoError && (
+                <p className="text-xs text-red-400">{telefonoError}</p>
+              )}
+
+              {!telefonoSearching && !telefonoError && telefonoResults && (() => {
+                const matched = pacCodigo
+                  ? telefonoResults.find((p) => p.pac_codigo === pacCodigo)
+                  : undefined;
+
+                if (telefonoResults.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      {t('fichaAutoNotFound')}
+                    </p>
+                  );
+                }
+
+                const nombreCompleto = (p: PacienteTelefonoCandidato) =>
+                  [p.pac_nombre, p.pac_apellido, p.pac_apellido_materno].filter(Boolean).join(' ');
+
+                if (pacCodigo && matched) {
+                  const inoName = nombreCompleto(matched);
+                  return (
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="flex items-center gap-1.5 text-xs text-emerald-500">
+                        <CheckCircle2 className="size-3.5" />
+                        {t('fichaAutoMatch', { nombre: inoName })}
+                      </p>
+                      {name !== inoName && (
+                        <button
+                          type="button"
+                          onClick={() => setName(inoName)}
+                          className="shrink-0 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t('fichaAutoUseName')}
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-amber-400">
+                      {pacCodigo ? t('fichaAutoMismatch', { ficha: pacCodigo }) : t('fichaAutoSelect')}
+                    </p>
+                    {telefonoResults.map((p) => (
+                      <button
+                        key={p.pac_codigo}
+                        type="button"
+                        onClick={() => {
+                          setPacCodigo(p.pac_codigo);
+                          setName(nombreCompleto(p));
+                        }}
+                        className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-card px-3 py-2 text-left text-sm hover:bg-muted"
+                      >
+                        <span className="font-medium text-foreground">{nombreCompleto(p)}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{p.pac_codigo}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
-          {!manualMode && (
+          {!isEdit && !manualMode && (
             <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
               <Label htmlFor="cf-ficha" className="text-muted-foreground">
                 {t('fichaLabel')}
