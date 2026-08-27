@@ -98,7 +98,7 @@
       "timeD": "hace {day}d"
     },
     "conversationsChart": {
-      "title": "Conversaciones en el tiempo",
+      "title": "Interacciones en el tiempo",
       "description": "Volumen diario de mensajes por dirección",
       "days": "{count} días",
       "noActivity": "Sin actividad de mensajes en este rango",
@@ -107,7 +107,7 @@
       "outgoing": "Salientes",
       "tooltipIncoming": "{count} entrantes",
       "tooltipOutgoing": "{count} salientes",
-      "ariaLabel": "Conversaciones por día"
+      "ariaLabel": "Interacciones por día"
     },
     "pipelineDonut": {
       "title": "Valor del embudo",
