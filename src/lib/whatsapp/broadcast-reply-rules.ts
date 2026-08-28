@@ -121,13 +121,24 @@ export async function dispatchBroadcastReplyRule(
 
       const { data: contact } = await db
         .from('contacts')
-        .select('phone')
+        .select('phone, pac_codigo')
         .eq('id', args.contactId)
         .maybeSingle()
 
+      // Si ya sabemos la ficha de este contacto (aplicada por
+      // applyCampaignFicha justo antes de este dispatch, o de una
+      // resolucion previa), la incluimos con un sentinel parseable
+      // para que el workflow externo (BotINO Principal en n8n, que
+      // corre contra su propia DB botino_analytics) no tenga que
+      // re-resolver al paciente por telefono desde cero -- sin esto,
+      // el bot ignoraba una ficha que wacrm ya conocia y caia al
+      // flujo de "paciente no encontrado, pide tu RUT" (bug real
+      // detectado 2026-08-28).
+      const fichaTag = contact?.pac_codigo ? ` [[FICHA:${contact.pac_codigo}]]` : ''
       const eventText =
-        rule.action_text?.trim() ||
-        `Customer replied "${args.replyValue}" to the "${args.templateName}" campaign.`
+        (rule.action_text?.trim() ||
+          `El paciente respondió "${args.replyValue}" a la campaña "${args.templateName}".`) +
+        fichaTag
 
       const result = await generateReply({
         config,
