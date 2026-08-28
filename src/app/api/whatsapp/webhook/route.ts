@@ -720,7 +720,8 @@ async function processMessage(
   const convResult = await findOrCreateConversation(
     accountId,
     configOwnerUserId,
-    contactRecord.id
+    contactRecord.id,
+    message.text?.body ?? null
   )
   if (!convResult) return
   const conversation = convResult.conversation
@@ -1307,10 +1308,28 @@ function isConversationStale(conv: {
   return ageHours >= CONVERSATION_IDLE_HOURS
 }
 
+// Ventana de tiempo despues de cerrar un ticket durante la cual una
+// respuesta corta/de cortesia (ej. "gracias") lo reabre en vez de
+// crear un ticket nuevo solo para eso -- pedido 2026-08-28.
+const COURTESY_REOPEN_WINDOW_HOURS = 4
+
+// Deliberadamente conservador: solo mensajes de cierre tipico, no
+// cualquier mensaje corto (una consulta nueva breve como "hola" o
+// "tengo una duda" NO debe reabrir el ticket viejo, debe crear uno
+// nuevo como siempre).
+const COURTESY_REPLY_REGEX =
+  /^(gracias|muchas gracias|muchisimas gracias|ok|okay|okey|listo|dale|perfecto|genial|excelente|de acuerdo|entendido|todo bien|todo claro|\u{1F44D}|\u{1F64F}|\u{1F44C})[\s.,!\u00a1]*$/iu
+
+function isCourtesyReply(text: string | null): boolean {
+  if (!text) return false
+  return COURTESY_REPLY_REGEX.test(text.trim())
+}
+
 async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  messageText: string | null,
 ) {
   // Look for the MOST RECENT conversation in this account for this
   // contact (not oldest-first anymore -- migration 041 lets a contact
@@ -1340,6 +1359,32 @@ async function findOrCreateConversation(
 
   if (mostRecent && !isConversationStale(mostRecent)) {
     return { conversation: mostRecent, created: false }
+  }
+
+  // Cierre reciente + respuesta de cortesia (ej. "gracias") -> reabrir
+  // el mismo ticket en vez de crear uno nuevo solo para ese mensaje.
+  // Ventana de 4h desde el cierre (updated_at sirve de proxy confiable
+  // de "closed_at" mientras nada mas toque la fila despues de
+  // cerrarla, mismo supuesto que ya usa historial/stats). Las
+  // estadisticas de duracion usan el PRIMER evento de cierre real
+  // desde conversation_events, no updated_at -- reabrir no las
+  // corrompe (ver conversacion 2026-08-28).
+  if (mostRecent && mostRecent.status === 'closed') {
+    const hoursSinceClosed =
+      (Date.now() - new Date(mostRecent.updated_at).getTime()) / 3_600_000
+    if (hoursSinceClosed <= COURTESY_REOPEN_WINDOW_HOURS && isCourtesyReply(messageText)) {
+      const { data: reopened, error: reopenError } = await supabaseAdmin()
+        .from('conversations')
+        .update({ status: 'open' })
+        .eq('id', mostRecent.id)
+        .select()
+        .single()
+      if (!reopenError && reopened) {
+        return { conversation: reopened, created: false }
+      }
+      console.error('Error reopening conversation for courtesy reply:', reopenError)
+      // Sigue al flujo normal (cerrar + crear nueva) si el reopen fallo.
+    }
   }
 
   // Either there's no conversation yet, or the most recent one is stale

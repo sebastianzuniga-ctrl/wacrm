@@ -15,7 +15,7 @@ export async function GET() {
 
     const { data: convs, error } = await ctx.supabase
       .from('conversations')
-      .select('status, created_at, updated_at')
+      .select('id, status, created_at, updated_at')
       .eq('account_id', ctx.accountId);
 
     if (error) {
@@ -29,14 +29,36 @@ export async function GET() {
     const pending = rows.filter((c) => c.status === 'pending').length;
     const closed = rows.filter((c) => c.status === 'closed').length;
 
-    // Duracion de un ticket cerrado = updated_at - created_at. updated_at
-    // se toca automaticamente (trigger set_updated_at) cuando se cierra,
-    // y no hay mas updates despues de cerrado, asi que sirve de proxy
-    // confiable de "closed_at" sin necesitar una columna nueva.
+    // Duracion de un ticket = tiempo hasta su PRIMER cierre real, leido
+    // de conversation_events (trigger, migration 042) -- no de
+    // updated_at. Antes se asumia "no hay mas updates despues de
+    // cerrado", supuesto que dejo de valer cuando un ticket cerrado
+    // puede reabrirse (respuesta de cortesia dentro de 4h, ver
+    // findOrCreateConversation) y updated_at avanza de nuevo. Usar el
+    // primer evento de cierre preserva el tiempo de resolucion real
+    // sin importar si despues se reabrio.
+    const { data: closeEvents } = await ctx.supabase
+      .from('conversation_events')
+      .select('conversation_id, created_at')
+      .eq('account_id', ctx.accountId)
+      .eq('event_type', 'status_changed')
+      .eq('to_value', 'closed')
+      .order('created_at', { ascending: true });
+
+    const firstCloseByConv = new Map<string, string>();
+    for (const e of closeEvents ?? []) {
+      if (!firstCloseByConv.has(e.conversation_id)) {
+        firstCloseByConv.set(e.conversation_id, e.created_at);
+      }
+    }
+
     const durationsHours = rows
-      .filter((c) => c.status === 'closed')
-      .map((c) => (new Date(c.updated_at).getTime() - new Date(c.created_at).getTime()) / 3_600_000)
-      .filter((h) => Number.isFinite(h) && h >= 0);
+      .map((c) => {
+        const firstClose = firstCloseByConv.get(c.id);
+        if (!firstClose) return null;
+        return (new Date(firstClose).getTime() - new Date(c.created_at).getTime()) / 3_600_000;
+      })
+      .filter((h): h is number => h !== null && Number.isFinite(h) && h >= 0);
     const avgDurationHours = durationsHours.length
       ? durationsHours.reduce((a, b) => a + b, 0) / durationsHours.length
       : null;
