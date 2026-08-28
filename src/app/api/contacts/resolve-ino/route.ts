@@ -59,7 +59,10 @@ export async function POST() {
             skipped++;
             continue;
           }
-          await db.from('contacts').update({ name: nombre }).eq('id', contact.id);
+          // es_paciente_ino=true evita que el webhook pise este nombre
+          // real con el nombre de perfil de WhatsApp en el proximo
+          // mensaje entrante -- bug real detectado 2026-08-28.
+          await db.from('contacts').update({ name: nombre, es_paciente_ino: true }).eq('id', contact.id);
           updated++;
         } else {
           const result = await lookupPacienteByPhone(contact.phone);
@@ -82,7 +85,7 @@ export async function POST() {
             .join(' ');
           await db
             .from('contacts')
-            .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto })
+            .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto, es_paciente_ino: true })
             .eq('id', contact.id);
           updated++;
         }

@@ -921,6 +921,20 @@ export function MessageThread({
       setActivityLoading(false);
     }
   }, [conversation?.id]);
+  // Un ticket cerrado necesita mostrar quien lo cerro y cuando SIN que
+  // el usuario tenga que abrir el dropdown de Actividad -- pedido
+  // 2026-08-28. Reusa el mismo conversation_events (trigger, migration
+  // 042) en vez de columnas nuevas: ya registra actor_id + created_at
+  // para cada cambio de estado, incluyendo los automaticos (cron 24h),
+  // donde actor_name llega null.
+  useEffect(() => {
+    if (conversation?.status === "closed" && activityEvents === null) {
+      loadActivity();
+    }
+  }, [conversation?.status, activityEvents, loadActivity]);
+  const closedEvent = activityEvents?.find(
+    (e) => e.event_type === "status_changed" && e.to_value === "closed"
+  ) ?? null;
   const statusLabel = (value: string | null) => {
     const opt = STATUS_OPTIONS.find((o) => o.value === value);
     return opt ? t(`status${opt.label}`) : value ?? "";
@@ -1122,6 +1136,21 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* Quien cerro el ticket y cuando -- visible sin abrir el
+              dropdown de Actividad. actor_name null = cierre
+              automatico (cron 24h / webhook stale-session). */}
+          {isClosed && closedEvent && (
+            <span className="text-xs text-muted-foreground">
+              {closedEvent.actor_name
+                ? t("closedByAt", {
+                    name: closedEvent.actor_name,
+                    time: format(new Date(closedEvent.created_at), "dd/MM HH:mm"),
+                  })
+                : t("closedAutoAt", {
+                    time: format(new Date(closedEvent.created_at), "dd/MM HH:mm"),
+                  })}
+            </span>
+          )}
           {/* Status dropdown -- bloqueado (sin dropdown) si el ticket
               esta cerrado y el rol actual no puede reabrirlo. */}
           {statusLocked ? (

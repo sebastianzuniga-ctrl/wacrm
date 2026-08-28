@@ -301,6 +301,13 @@ export function ContactForm({
             email: email.trim() || null,
             company: company.trim() || null,
             pac_codigo: pacCodigo,
+            // es_paciente_ino=true evita que el webhook pise este
+            // nombre real con el nombre de perfil de WhatsApp en el
+            // siguiente mensaje entrante (ver findOrCreateContact en
+            // el webhook) -- sin esto, el nombre que acabamos de
+            // validar/aplicar aca se perdia apenas llegaba el proximo
+            // mensaje. Bug real detectado 2026-08-28.
+            es_paciente_ino: !!pacCodigo,
             updated_at: new Date().toISOString(),
           })
           .eq('id', contactId);
@@ -316,6 +323,7 @@ export function ContactForm({
             email: email.trim() || null,
             company: company.trim() || null,
             pac_codigo: pacCodigo,
+            es_paciente_ino: !!pacCodigo,
           })
           .select('id')
           .single();

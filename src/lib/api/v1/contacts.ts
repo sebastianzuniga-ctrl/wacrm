@@ -190,7 +190,11 @@ async function autoLinkNameByFicha(
     if (detalles.length === 0) return;
     const nombreCompleto = detalles[0].nombreCompleto;
     if (!nombreCompleto) return;
-    await db.from('contacts').update({ name: nombreCompleto }).eq('id', contactId);
+    // es_paciente_ino=true evita que el webhook pise este nombre real
+    // con el nombre de perfil de WhatsApp en el proximo mensaje
+    // entrante (bug real detectado 2026-08-28, ver findOrCreateContact
+    // en el webhook y el mismo fix en contact-form.tsx).
+    await db.from('contacts').update({ name: nombreCompleto, es_paciente_ino: true }).eq('id', contactId);
   } catch (err) {
     console.error('[autoLinkNameByFicha] failed:', err);
   }
@@ -219,7 +223,7 @@ async function autoLinkFichaByPhone(
       .join(' ');
     await db
       .from('contacts')
-      .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto })
+      .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto, es_paciente_ino: true })
       .eq('id', contactId);
   } catch (err) {
     console.error('[autoLinkFichaByPhone] failed:', err);
