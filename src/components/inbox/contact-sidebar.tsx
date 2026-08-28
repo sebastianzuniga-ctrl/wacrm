@@ -16,6 +16,7 @@ import {
   StickyNote,
   Plus,
   FileText,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,6 +25,17 @@ import { useTranslations } from "next-intl";
 
 interface ContactSidebarProps {
   contact: Contact | null;
+  /** Notifica al padre tras actualizar name/pac_codigo desde INO, para
+   *  que refleje el cambio donde tenga su propia copia del contacto
+   *  (activeContact, lista de conversaciones). */
+  onContactUpdated?: (patch: Partial<Contact> & { id: string }) => void;
+}
+
+interface PacienteTelefonoCandidato {
+  pac_codigo: string;
+  pac_nombre: string;
+  pac_apellido: string;
+  pac_apellido_materno: string | null;
 }
 
 type FichaEstado = "activa" | "seleccionando" | "esperando_rut" | "sin_sesion";
@@ -43,7 +55,7 @@ interface CitaAgenda {
   hora: string;
 }
 
-export function ContactSidebar({ contact }: ContactSidebarProps) {
+export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
 
@@ -138,6 +150,79 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     };
   }, [contact?.phone]);
 
+  // Actualizar datos reales del contacto (wacrm) desde INO por
+  // telefono -- distinto del bloque "Ficha INO" de arriba, que lee el
+  // estado de sesion del BOT (botino_analytics). Este botón corrige
+  // contacts.name/pac_codigo en wacrm, mismo criterio que el
+  // validador del modal de editar contacto y el botón "Revisar y
+  // completar" de Contactos: solo aplica si INO reporta EXACTAMENTE
+  // un paciente para este teléfono, nunca adivina en casos ambiguos.
+  const [refreshingIno, setRefreshingIno] = useState(false);
+  type RefreshInoResult = "matched" | "not_found" | "ambiguous" | "error" | null;
+  const [refreshInoResult, setRefreshInoResult] = useState<RefreshInoResult>(null);
+
+  const handleRefreshFromIno = useCallback(async () => {
+    if (!contact?.phone) return;
+    setRefreshingIno(true);
+    setRefreshInoResult(null);
+    try {
+      const res = await fetch(
+        `/api/ino-paciente-telefono?phone=${encodeURIComponent(contact.phone)}`
+      );
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "error");
+
+      const raw: PacienteTelefonoCandidato[] = body.pacientes ?? [];
+      const seen = new Set<string>();
+      const unique = raw.filter((p) => {
+        if (seen.has(p.pac_codigo)) return false;
+        seen.add(p.pac_codigo);
+        return true;
+      });
+
+      if (unique.length === 0) {
+        setRefreshInoResult("not_found");
+        return;
+      }
+      if (unique.length > 1) {
+        setRefreshInoResult("ambiguous");
+        return;
+      }
+
+      const paciente = unique[0];
+      const nombreCompleto = [
+        paciente.pac_nombre,
+        paciente.pac_apellido,
+        paciente.pac_apellido_materno,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("contacts")
+        .update({
+          name: nombreCompleto,
+          pac_codigo: paciente.pac_codigo,
+          es_paciente_ino: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", contact.id);
+      if (error) throw error;
+
+      onContactUpdated?.({
+        id: contact.id,
+        name: nombreCompleto,
+        pac_codigo: paciente.pac_codigo,
+      });
+      setRefreshInoResult("matched");
+    } catch {
+      setRefreshInoResult("error");
+    } finally {
+      setRefreshingIno(false);
+    }
+  }, [contact, onContactUpdated]);
+
   const handleCopyPhone = useCallback(async () => {
     if (!contact?.phone) return;
     await navigator.clipboard.writeText(contact.phone);
@@ -214,6 +299,33 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             {ticketCount !== null && ticketCount > 1 && (
               <p className="mt-1 text-xs text-muted-foreground">
                 {ticketCount}ª vez que escribe
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={handleRefreshFromIno}
+              disabled={refreshingIno || !contact.phone}
+              className="mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+            >
+              <RefreshCw className={cn("h-3 w-3", refreshingIno && "animate-spin")} />
+              {refreshingIno ? "Actualizando..." : "Actualizar desde INO"}
+            </button>
+            {refreshInoResult === "matched" && (
+              <p className="mt-1 text-[11px] text-emerald-500">Datos actualizados.</p>
+            )}
+            {refreshInoResult === "not_found" && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                INO no tiene paciente con este teléfono.
+              </p>
+            )}
+            {refreshInoResult === "ambiguous" && (
+              <p className="mt-1 text-[11px] text-amber-500">
+                Hay más de un paciente con este teléfono. Usa &quot;Editar contacto&quot; en Contactos para elegir.
+              </p>
+            )}
+            {refreshInoResult === "error" && (
+              <p className="mt-1 text-[11px] text-red-400">
+                No se pudo consultar INO. Intenta de nuevo.
               </p>
             )}
           </div>

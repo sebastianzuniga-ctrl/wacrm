@@ -670,7 +670,21 @@ function InboxPageInner() {
             toggle — which is itself desktop-only — never affects it. */}
         {contactPanelOpen && (
           <div className="hidden lg:block">
-            <ContactSidebar contact={activeContact} />
+            <ContactSidebar
+              contact={activeContact}
+              onContactUpdated={(patch) => {
+                setActiveContact((prev) =>
+                  prev && prev.id === patch.id ? { ...prev, ...patch } : prev
+                );
+                setConversations((prev) =>
+                  prev.map((c) =>
+                    c.contact?.id === patch.id
+                      ? { ...c, contact: { ...c.contact, ...patch } }
+                      : c
+                  )
+                );
+              }}
+            />
           </div>
         )}
       </div>
