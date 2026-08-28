@@ -346,6 +346,21 @@ export function ContactForm({
         }
       }
 
+      // Best-effort: si la sesion del bot quedo colgada pidiendo RUT
+      // (o eligiendo entre varios), ya no tiene sentido ahora que
+      // wacrm resolvio la ficha real -- sacarla de ese estado.
+      if (pacCodigo) {
+        fetch('/api/ino-clear-esperando-rut', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone: phone.trim(),
+            pac_codigo: pacCodigo,
+            pac_nombre: name.trim() || null,
+          }),
+        }).catch(() => {});
+      }
+
       toast.success(isEdit ? t('toastSuccessEdit') : t('toastSuccessAdd'));
       onOpenChange(false);
       onSaved();

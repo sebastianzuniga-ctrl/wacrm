@@ -242,6 +242,39 @@ export async function updateSesion(waId: string, input: UpdateSesionInput): Prom
   }
 }
 
+/**
+ * Saca a un contacto del sentinel ESPERANDO_RUT/SELECCIONANDO cuando
+ * wacrm ya resolvio su ficha real por otra via (validador manual,
+ * auto-link de campana, boton "Actualizar desde INO") -- sin esto, una
+ * sesion que quedo pidiendo RUT nunca se recupera sola, ni siquiera si
+ * el paciente ya esta identificado en wacrm (bug real detectado
+ * 2026-08-28, ver conversacion con Catalina Villarroel). Solo toca la
+ * fila si esta efectivamente en uno de esos dos estados -- una sesion
+ * sana (con una ficha real ya resuelta por el propio bot, o
+ * genuinamente nueva) queda intacta.
+ */
+export async function clearEsperandoRut(
+  waId: string,
+  pacCodigo: string,
+  pacNombre: string | null,
+  pacApellido: string | null
+): Promise<boolean> {
+  const db = getPool();
+  if (!db) return false;
+  try {
+    await db.query(
+      `UPDATE sesiones
+       SET pac_codigo = $2, pac_nombre = $3, pac_apellido = $4, updated_at = NOW()
+       WHERE wa_id = $1 AND pac_codigo IN ('ESPERANDO_RUT', 'SELECCIONANDO')`,
+      [waId, pacCodigo, pacNombre, pacApellido]
+    );
+    return true;
+  } catch (err) {
+    console.error('[ino/sesion] clearEsperandoRut failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
 export async function deleteSesion(waId: string): Promise<boolean> {
   const db = getPool();
   if (!db) return false;

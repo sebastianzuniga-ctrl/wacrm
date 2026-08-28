@@ -20,6 +20,7 @@ import { requireRole } from '@/lib/auth/account';
 import { toErrorResponse } from '@/lib/auth/account';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { getPacienteByFicha, lookupPacienteByPhone } from '@/lib/ino/paciente';
+import { clearEsperandoRut } from '@/lib/ino/sesion';
 
 interface ContactRow {
   id: string;
@@ -63,6 +64,7 @@ export async function POST() {
           // real con el nombre de perfil de WhatsApp en el proximo
           // mensaje entrante -- bug real detectado 2026-08-28.
           await db.from('contacts').update({ name: nombre, es_paciente_ino: true }).eq('id', contact.id);
+          await clearEsperandoRut(contact.phone, contact.pac_codigo, nombre, null);
           updated++;
         } else {
           const result = await lookupPacienteByPhone(contact.phone);
@@ -87,6 +89,7 @@ export async function POST() {
             .from('contacts')
             .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto, es_paciente_ino: true })
             .eq('id', contact.id);
+          await clearEsperandoRut(contact.phone, paciente.pac_codigo, paciente.pac_nombre, paciente.pac_apellido);
           updated++;
         }
       } catch (err) {

@@ -195,6 +195,15 @@ async function autoLinkNameByFicha(
     // entrante (bug real detectado 2026-08-28, ver findOrCreateContact
     // en el webhook y el mismo fix en contact-form.tsx).
     await db.from('contacts').update({ name: nombreCompleto, es_paciente_ino: true }).eq('id', contactId);
+
+    // Best-effort: sacar al contacto de ESPERANDO_RUT/SELECCIONANDO en
+    // la sesion del bot (botino_analytics) ahora que wacrm ya resolvio
+    // la ficha real -- bug real detectado 2026-08-28.
+    const { data: c } = await db.from('contacts').select('phone').eq('id', contactId).maybeSingle();
+    if (c?.phone) {
+      const { clearEsperandoRut } = await import('@/lib/ino/sesion');
+      await clearEsperandoRut(c.phone, ficha, nombreCompleto, null);
+    }
   } catch (err) {
     console.error('[autoLinkNameByFicha] failed:', err);
   }
@@ -225,6 +234,11 @@ async function autoLinkFichaByPhone(
       .from('contacts')
       .update({ pac_codigo: paciente.pac_codigo, name: nombreCompleto, es_paciente_ino: true })
       .eq('id', contactId);
+
+    // Best-effort: sacar al contacto de ESPERANDO_RUT/SELECCIONANDO en
+    // la sesion del bot -- bug real detectado 2026-08-28.
+    const { clearEsperandoRut } = await import('@/lib/ino/sesion');
+    await clearEsperandoRut(sanitizedPhone, paciente.pac_codigo, paciente.pac_nombre, paciente.pac_apellido);
   } catch (err) {
     console.error('[autoLinkFichaByPhone] failed:', err);
   }

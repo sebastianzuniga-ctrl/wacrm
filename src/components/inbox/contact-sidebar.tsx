@@ -215,6 +215,22 @@ export function ContactSidebar({ contact, onContactUpdated }: ContactSidebarProp
         name: nombreCompleto,
         pac_codigo: paciente.pac_codigo,
       });
+
+      // Best-effort: si la sesion del bot quedo colgada pidiendo RUT
+      // (o eligiendo entre varios), ya no tiene sentido ahora que
+      // wacrm resolvio la ficha real -- sacarla de ese estado para
+      // que el bot no siga pidiendo un RUT que ya no hace falta.
+      fetch("/api/ino-clear-esperando-rut", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: contact.phone,
+          pac_codigo: paciente.pac_codigo,
+          pac_nombre: paciente.pac_nombre,
+          pac_apellido: paciente.pac_apellido,
+        }),
+      }).catch(() => {});
+
       setRefreshInoResult("matched");
     } catch {
       setRefreshInoResult("error");
