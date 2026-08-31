@@ -455,10 +455,18 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages -- pero SOLO si el usuario ya
+  // estaba cerca del final. Sin esto, el refresco periodico de mensajes
+  // (polling cada ~12s, workaround de Realtime roto) forzaba el scroll
+  // al fondo en cada actualizacion, incluso si el agente estaba leyendo
+  // arriba en medio de una conversacion larga -- tedioso, tenia que
+  // volver a bajar y buscar donde se habia quedado. Pedido 2026-08-28.
+  const NEAR_BOTTOM_THRESHOLD_PX = 150;
   useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom <= NEAR_BOTTOM_THRESHOLD_PX) {
       el.scrollTop = el.scrollHeight;
     }
   }, [messages]);
