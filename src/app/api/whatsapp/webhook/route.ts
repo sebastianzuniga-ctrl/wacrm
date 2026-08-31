@@ -227,6 +227,46 @@ async function isHmacEnabledForPhoneNumberId(phoneNumberId: string | null): Prom
   return data.webhook_hmac_enabled ?? true
 }
 
+// Debounce del auto-reply de IA por conversacion (pedido 2026-08-28):
+// cuando el paciente manda varios mensajes seguidos y rapido (ej.
+// "Hola" / "Perdon estas ahi" / "..."), cada uno disparaba su PROPIA
+// llamada en paralelo al agente (n8n/BotINO u otro provider), que
+// arranca cada vez desde cero sin saber de las otras corriendo al
+// mismo tiempo -- resultado: el bot saluda 2-3 veces y hasta genera
+// links de agendar DISTINTOS para la misma cita (cada llamada le pide
+// a DentWeb un token nuevo). No hace falta concatenar texto: cada
+// mensaje ya se guarda individualmente en `messages`, y el contexto
+// que arma dispatchInboundToAiReply (buildConversationContext) lee
+// todo el historial de la DB al momento de ejecutarse -- alcanza con
+// asegurar que la llamada al agente se dispare UNA sola vez, 10s
+// despues del ULTIMO mensaje sin que llegue uno nuevo en el medio.
+//
+// Mapa a nivel de modulo -- funciona porque wacrm-prod corre como un
+// unico proceso Node persistente (systemd, no serverless), asi que el
+// mapa sobrevive entre requests. Si el proceso se reinicia justo en
+// medio de una ventana de espera, esa tanda de mensajes se pierde sin
+// respuesta -- riesgo aceptado, mucho mejor que triplicar la
+// respuesta en el caso normal.
+const AI_DISPATCH_DEBOUNCE_MS = 10_000
+const aiDispatchTimers = new Map<string, NodeJS.Timeout>()
+
+function scheduleAiDispatch(args: {
+  accountId: string
+  conversationId: string
+  contactId: string
+  configOwnerUserId: string
+}) {
+  const existing = aiDispatchTimers.get(args.conversationId)
+  if (existing) clearTimeout(existing)
+  const timer = setTimeout(() => {
+    aiDispatchTimers.delete(args.conversationId)
+    dispatchInboundToAiReply(args).catch((err) => {
+      console.error('[webhook] debounced dispatchInboundToAiReply failed:', err)
+    })
+  }, AI_DISPATCH_DEBOUNCE_MS)
+  aiDispatchTimers.set(args.conversationId, timer)
+}
+
 // POST - Receive messages
 export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
@@ -1032,7 +1072,7 @@ async function processMessage(
   // completely unanswered. Fall through to the AI in that specific gap.
   const interactiveOrphaned = !!interactiveReplyId && !repliedBroadcastTemplate
   if (!flowConsumed && (!interactiveReplyId || interactiveOrphaned) && inboundText.trim()) {
-    await dispatchInboundToAiReply({
+    scheduleAiDispatch({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
