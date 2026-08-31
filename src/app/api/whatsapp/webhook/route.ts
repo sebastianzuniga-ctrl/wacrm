@@ -1039,6 +1039,27 @@ async function processMessage(
       configOwnerUserId,
     })
   }
+  // Ticket derivado (por el bot, o manualmente via el boton "Derivar a
+  // ejecutivo") y todavia sin reclamar por un humano: el paciente queda
+  // en silencio total mientras espera, porque el auto-reply de IA esta
+  // pausado (ai_autoreply_disabled) y no hay nadie asignado todavia.
+  // Cada mensaje que escriba en ese estado recibe un aviso fijo -- sin
+  // IA, deterministico -- de que ya lo estan derivando, para que no
+  // sienta que el mensaje se perdio (pedido 2026-08-28).
+  if (conversation.ai_autoreply_disabled && !conversation.assigned_agent_id && inboundText.trim()) {
+    try {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId: conversation.id,
+        contactId: contactRecord.id,
+        text: 'Ya te estamos derivando con un ejecutivo de nuestro equipo, en breve te atienden 🙏',
+        aiGenerated: true,
+      })
+    } catch (err) {
+      console.error('[webhook] handoff-waiting notice failed:', err)
+    }
+  }
 
   // message.received webhook (public API). Awaited — not fire-and-forget
   // — because we're inside the route's `after()` block, which only keeps

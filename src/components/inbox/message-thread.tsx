@@ -29,6 +29,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Eye,
+  UserCog,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -638,6 +639,28 @@ export function MessageThread({
     [conversation, onNewMessage, onUpdateMessage],
   );
 
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const handleHandoff = useCallback(async () => {
+    if (!conversation) return;
+    setHandoffLoading(true);
+    try {
+      const res = await fetch(`/api/conversations/${conversation.id}/handoff`, {
+        method: "POST",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error ?? "No se pudo derivar la conversación");
+      toast.success(
+        body.withinHours === false
+          ? "Fuera de horario: se le informó al paciente, sin asignar."
+          : "Derivado. El ticket queda disponible para que un ejecutivo lo tome."
+      );
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo derivar la conversación");
+    } finally {
+      setHandoffLoading(false);
+    }
+  }, [conversation]);
+
   const handleStatusChange = useCallback(
     async (status: ConversationStatus) => {
       if (!conversation) return;
@@ -1101,6 +1124,23 @@ export function MessageThread({
             </button>
           )}
 
+          {/* Derivar a ejecutivo manualmente -- para cuando el admin/agente
+              ve que el paciente necesita ayuda humana y el bot no lo
+              detecto (o no ejecuto la derivacion) solo. Pausa el bot,
+              deja el ticket disponible para "Tomar contacto" (o lo
+              asigna al agente de handoff configurado), y avisa al
+              paciente -- mismo mecanismo que el handoff automatico de
+              la IA. Pedido 2026-08-28. */}
+          <button
+            type="button"
+            onClick={handleHandoff}
+            disabled={handoffLoading}
+            aria-label="Derivar a ejecutivo"
+            title="Derivar a ejecutivo"
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+          >
+            <UserCog className={cn("h-3.5 w-3.5", handoffLoading && "animate-pulse")} />
+          </button>
           {/* Activity / audit trail -- who changed status or
               assignment and when. Fetches on open; see
               /api/conversations/[id]/events. */}
