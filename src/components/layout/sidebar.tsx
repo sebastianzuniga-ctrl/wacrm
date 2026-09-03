@@ -223,15 +223,23 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
             {navItems
-              .filter(
-                (item) =>
-                  (!item.minRole || (!!accountRole && hasMinRole(accountRole, item.minRole))) &&
-                  // Perfil personalizado (Configuración > Perfiles): si el
-                  // usuario tiene uno asignado, allowedPages restringe el
-                  // menú a esa lista además del chequeo de minRole de
-                  // arriba -- nunca lo amplía, solo lo acota más.
-                  (!allowedPages || allowedPages.includes(item.href)),
-              )
+              .filter((item) => {
+                // Perfil personalizado (Configuración > Perfiles): si el
+                // admin marco explicitamente esta pagina como permitida
+                // para este perfil, eso GANA por sobre minRole -- es un
+                // permiso otorgado a proposito (ej. dejar que un agente
+                // vea Contactos, normalmente admin-only). Si el perfil
+                // existe pero NO incluye esta pagina, se oculta sin
+                // importar minRole (acota). Sin perfil asignado, se usa
+                // solo minRole como antes. Bug real detectado 2026-09-03:
+                // antes era un AND que solo podia acotar, nunca ampliar,
+                // asi que marcar una pagina admin-only como permitida en
+                // el perfil de un agente no tenia ningun efecto.
+                if (allowedPages) {
+                  return allowedPages.includes(item.href);
+                }
+                return !item.minRole || (!!accountRole && hasMinRole(accountRole, item.minRole));
+              })
               .map((item) => {
               const isActive =
                 pathname === item.href ||
