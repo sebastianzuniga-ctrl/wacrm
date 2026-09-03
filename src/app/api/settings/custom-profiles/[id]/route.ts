@@ -49,6 +49,10 @@ export async function PATCH(
       if (!Array.isArray(body.allowed_pages)) return bad('allowed_pages debe ser un array');
       update.allowed_pages = body.allowed_pages.filter((p: unknown) => typeof p === 'string');
     }
+    if (body.allowed_template_ids !== undefined) {
+      if (!Array.isArray(body.allowed_template_ids)) return bad('allowed_template_ids debe ser un array');
+      update.allowed_template_ids = body.allowed_template_ids.filter((t: unknown) => typeof t === 'string');
+    }
 
     if (Object.keys(update).length === 0) return bad('Nada que actualizar');
     update.updated_at = new Date().toISOString();
@@ -58,7 +62,7 @@ export async function PATCH(
       .update(update)
       .eq('id', id)
       .eq('account_id', ctx.accountId)
-      .select('id, name, base_role, allowed_pages, created_at')
+      .select('id, name, base_role, allowed_pages, allowed_template_ids, created_at')
       .maybeSingle();
 
     if (error) {

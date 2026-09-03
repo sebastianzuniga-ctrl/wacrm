@@ -19,7 +19,7 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount();
     const { data, error } = await supabase
       .from('custom_profiles')
-      .select('id, name, base_role, allowed_pages, created_at')
+      .select('id, name, base_role, allowed_pages, allowed_template_ids, created_at')
       .eq('account_id', accountId)
       .order('name');
     if (error) {
@@ -51,6 +51,10 @@ export async function POST(request: Request) {
       ? body.allowed_pages.filter((p: unknown) => typeof p === 'string')
       : [];
 
+    const allowedTemplateIds = Array.isArray(body.allowed_template_ids)
+      ? body.allowed_template_ids.filter((t: unknown) => typeof t === 'string')
+      : [];
+
     const { data, error } = await ctx.supabase
       .from('custom_profiles')
       .insert({
@@ -58,8 +62,9 @@ export async function POST(request: Request) {
         name,
         base_role: baseRole,
         allowed_pages: allowedPages,
+        allowed_template_ids: allowedTemplateIds,
       })
-      .select('id, name, base_role, allowed_pages, created_at')
+      .select('id, name, base_role, allowed_pages, allowed_template_ids, created_at')
       .single();
 
     if (error) {

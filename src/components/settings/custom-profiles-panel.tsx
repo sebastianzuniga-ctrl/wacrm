@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { Loader2, Plus, Pencil, Trash2, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { createClient } from "@/lib/supabase/client";
 import { CUSTOM_PROFILE_MENU_ITEMS } from "@/lib/auth/menu-items";
 import type { AccountMember } from "@/types";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,14 @@ interface CustomProfile {
   name: string;
   base_role: "admin" | "agent";
   allowed_pages: string[];
+  allowed_template_ids: string[];
   created_at: string;
+}
+
+interface TemplateOption {
+  id: string;
+  name: string;
+  category: string;
 }
 
 export function CustomProfilesPanel() {
@@ -48,12 +56,14 @@ export function CustomProfilesPanel() {
 
   const [profiles, setProfiles] = useState<CustomProfile[] | null>(null);
   const [members, setMembers] = useState<AccountMember[] | null>(null);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [editing, setEditing] = useState<CustomProfile | null | "new">(null);
   const [formName, setFormName] = useState("");
   const [formBaseRole, setFormBaseRole] = useState<"admin" | "agent">("agent");
   const [formPages, setFormPages] = useState<Set<string>>(new Set());
+  const [formTemplateIds, setFormTemplateIds] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<CustomProfile | null>(null);
@@ -64,14 +74,25 @@ export function CustomProfilesPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [profilesRes, membersRes] = await Promise.all([
+      const supabase = createClient();
+      const [profilesRes, membersRes, templatesRes] = await Promise.all([
         fetch("/api/settings/custom-profiles"),
         fetch("/api/account/members"),
+        // Reutiliza el mismo filtro que template-picker.tsx (solo
+        // APPROVED); scope real de cuenta vía RLS. NO se ve afectado
+        // por la policy restrictiva de custom_profile_id salvo que
+        // el propio admin tenga un perfil asignado.
+        supabase
+          .from("message_templates")
+          .select("id, name, category")
+          .eq("status", "APPROVED")
+          .order("name"),
       ]);
       const profilesBody = await profilesRes.json().catch(() => ({}));
       const membersBody = await membersRes.json().catch(() => ({}));
       if (profilesRes.ok) setProfiles(profilesBody.profiles ?? []);
       if (membersRes.ok) setMembers(membersBody.members ?? []);
+      if (!templatesRes.error) setTemplates((templatesRes.data as TemplateOption[]) ?? []);
     } finally {
       setLoading(false);
     }
@@ -86,6 +107,7 @@ export function CustomProfilesPanel() {
     setFormName("");
     setFormBaseRole("agent");
     setFormPages(new Set());
+    setFormTemplateIds(new Set());
     setEditing("new");
   }
 
@@ -93,6 +115,7 @@ export function CustomProfilesPanel() {
     setFormName(profile.name);
     setFormBaseRole(profile.base_role);
     setFormPages(new Set(profile.allowed_pages));
+    setFormTemplateIds(new Set(profile.allowed_template_ids ?? []));
     setEditing(profile);
   }
 
@@ -101,6 +124,15 @@ export function CustomProfilesPanel() {
       const next = new Set(prev);
       if (next.has(href)) next.delete(href);
       else next.add(href);
+      return next;
+    });
+  }
+
+  function toggleTemplate(id: string) {
+    setFormTemplateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -125,6 +157,7 @@ export function CustomProfilesPanel() {
           name,
           base_role: formBaseRole,
           allowed_pages: Array.from(formPages),
+          allowed_template_ids: Array.from(formTemplateIds),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -221,6 +254,8 @@ export function CustomProfilesPanel() {
                       {t("baseRoleLabel")}: {profile.base_role === "admin" ? t("roleAdmin") : t("roleAgent")}
                       {" · "}
                       {t("pagesCount", { count: profile.allowed_pages.length })}
+                      {" · "}
+                      {t("templatesCount", { count: (profile.allowed_template_ids ?? []).length })}
                     </p>
                   </div>
                   {canEditSettings && (
@@ -337,6 +372,26 @@ export function CustomProfilesPanel() {
                   </label>
                 ))}
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>{t("templatesLabel")}</Label>
+              {templates.length === 0 ? (
+                <p className="text-xs text-muted-foreground">{t("noTemplatesAvailable")}</p>
+              ) : (
+                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-3">
+                  {templates.map((tpl) => (
+                    <label key={tpl.id} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={formTemplateIds.has(tpl.id)}
+                        onCheckedChange={() => toggleTemplate(tpl.id)}
+                      />
+                      <span className="truncate">{tpl.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{tpl.category}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">{t("templatesHint")}</p>
             </div>
           </div>
           <DialogFooter>
