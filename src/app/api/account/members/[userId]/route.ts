@@ -86,7 +86,16 @@ export async function PATCH(
 
       if (typeof body.full_name === "string") {
         const fullName = body.full_name.trim();
-        const { error: nameErr } = await ctx.supabase
+        // BUG REAL 2026-09-01: esto usaba ctx.supabase (scoped a la
+        // sesion del admin que llama). La policy profiles_update es
+        // "auth.uid() = user_id" -- un admin editando el perfil de
+        // OTRO miembro filtraba 0 filas por RLS SIN lanzar error (un
+        // UPDATE que no matchea ninguna fila no es un error en
+        // Postgres/Supabase), asi que el endpoint devolvia { ok: true
+        // } sin haber cambiado nada. 5 miembros quedaron con nombres
+        // viejos en produccion por este bug -- corregidos a mano.
+        // Requiere el cliente admin para bypassear RLS aca.
+        const { error: nameErr } = await supabaseAdmin()
           .from("profiles")
           .update({ full_name: fullName || null })
           .eq("user_id", userId)
@@ -117,8 +126,9 @@ export async function PATCH(
         }
         // profiles.email es una copia denormalizada -- mantenerla en
         // sync, ya que no hay trigger de sync en cambios (solo en
-        // creacion, ver on_auth_user_created).
-        const { error: profileEmailErr } = await ctx.supabase
+        // creacion, ver on_auth_user_created). Mismo bug de RLS que
+        // full_name arriba -- usar el cliente admin.
+        const { error: profileEmailErr } = await supabaseAdmin()
           .from("profiles")
           .update({ email })
           .eq("user_id", userId)
