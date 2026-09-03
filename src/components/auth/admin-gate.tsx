@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import { Loader2, ShieldAlert } from 'lucide-react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { hasMinRole, type AccountRole } from '@/lib/auth/roles';
 
@@ -22,8 +23,18 @@ export function AdminGate({
   children: ReactNode;
   minRole?: AccountRole;
 }) {
-  const { accountRole, profileLoading } = useAuth();
-  const allowed = !profileLoading && !!accountRole && hasMinRole(accountRole, minRole);
+  const { accountRole, profileLoading, allowedPages } = useAuth();
+  const pathname = usePathname();
+  // Mismo criterio que el sidebar (fix 2026-09-03): si el perfil
+  // personalizado incluye explicitamente esta pagina, eso gana por
+  // sobre minRole -- es un permiso otorgado a proposito. Sin perfil
+  // asignado, se usa minRole como antes. Sin este ajuste, un admin
+  // podia marcar "Contactos" como permitido para un perfil de agente
+  // y el link aparecia en el sidebar, pero este gate seguia
+  // bloqueando la pagina igual con "Acceso restringido".
+  const allowed = allowedPages
+    ? allowedPages.includes(pathname)
+    : !profileLoading && !!accountRole && hasMinRole(accountRole, minRole);
 
   if (profileLoading) {
     return (
