@@ -871,6 +871,12 @@ async function processMessage(
       last_message_at: new Date().toISOString(),
       unread_count: (conversation.unread_count || 0) + 1,
       updated_at: new Date().toISOString(),
+      // Deja de estar "sin respuesta del paciente" en cuanto llega
+      // CUALQUIER mensaje entrante -- este UPDATE solo corre para
+      // mensajes de WhatsApp entrantes, siempre del cliente. Usado
+      // para ocultar por defecto en el inbox conversaciones creadas
+      // por campana sin interaccion todavia (pedido 2026-09-03).
+      has_customer_message: true,
     })
     .eq('id', conversation.id)
 

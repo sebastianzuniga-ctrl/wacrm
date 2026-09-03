@@ -56,6 +56,11 @@ type DateFilter = "today" | "3d" | "7d" | "all";
 // haya estado trabajando con otro filtro.
 const FILTER_STORAGE_KEY = "wacrm:inbox:filter";
 const DATE_FILTER_STORAGE_KEY = "wacrm:inbox:date-filter";
+// Pedido 2026-09-03: conversaciones creadas por campana sin que el
+// paciente haya respondido todavia (has_customer_message=false)
+// saturaban la lista. Oculto por defecto, con opcion de incluirlas
+// que se recuerda igual que los otros filtros.
+const INCLUDE_NO_REPLY_STORAGE_KEY = "wacrm:inbox:include-no-reply";
 const FILTER_VALUES: InboxFilter[] = ["all", "unread", "assigned", "openMine", "pendingMine", "closedMine"];
 const DATE_FILTER_VALUES: DateFilter[] = ["today", "3d", "7d", "all"];
 
@@ -88,6 +93,7 @@ export function ConversationList({
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("assigned");
   const [dateFilter, setDateFilter] = useState<DateFilter>("today");
+  const [includeNoReply, setIncludeNoReply] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Restaura la ultima seleccion del agente. Se hace en un efecto (no
@@ -103,6 +109,10 @@ export function ConversationList({
       const storedDateFilter = localStorage.getItem(DATE_FILTER_STORAGE_KEY);
       if (storedDateFilter && (DATE_FILTER_VALUES as string[]).includes(storedDateFilter)) {
         setDateFilter(storedDateFilter as DateFilter);
+      }
+      const storedIncludeNoReply = localStorage.getItem(INCLUDE_NO_REPLY_STORAGE_KEY);
+      if (storedIncludeNoReply === "true") {
+        setIncludeNoReply(true);
       }
     } catch {
       // localStorage puede tirar error en modo incognito / contextos
@@ -123,6 +133,14 @@ export function ConversationList({
     setDateFilter(value);
     try {
       localStorage.setItem(DATE_FILTER_STORAGE_KEY, value);
+    } catch {
+      // Persistencia best-effort.
+    }
+  }, []);
+  const handleIncludeNoReplyChange = useCallback((value: boolean) => {
+    setIncludeNoReply(value);
+    try {
+      localStorage.setItem(INCLUDE_NO_REPLY_STORAGE_KEY, value ? "true" : "false");
     } catch {
       // Persistencia best-effort.
     }
@@ -260,6 +278,13 @@ export function ConversationList({
       });
     }
 
+    // Ocultar por defecto las conversaciones donde el paciente nunca
+    // respondio (ej. campana recien enviada, sin interaccion) -- se
+    // pueden incluir con el toggle, se recuerda la eleccion.
+    if (!includeNoReply) {
+      result = result.filter((c) => c.has_customer_message !== false);
+    }
+
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
       result = result.filter((c) =>
@@ -281,7 +306,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, dateFilter, search, selectedTagIds, selectedCompany, user?.id]);
+  }, [conversations, filter, dateFilter, includeNoReply, search, selectedTagIds, selectedCompany, user?.id]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -381,6 +406,20 @@ export function ConversationList({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Toggle simple (no dropdown, solo on/off) para incluir
+              conversaciones sin respuesta del paciente -- ocultas por
+              defecto, se recuerda la eleccion (pedido 2026-09-03). */}
+          <button
+            type="button"
+            onClick={() => handleIncludeNoReplyChange(!includeNoReply)}
+            className={cn(
+              "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted whitespace-nowrap",
+              includeNoReply ? "text-primary" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {includeNoReply ? "✓ " : ""}Campañas
+          </button>
 
           {tags.length > 0 && (
             <DropdownMenu>

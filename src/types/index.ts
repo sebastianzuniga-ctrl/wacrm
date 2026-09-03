@@ -185,6 +185,11 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /** true si el paciente ya escribio al menos un mensaje en este hilo
+   *  (migration 062). false en conversaciones creadas por campana sin
+   *  interaccion todavia -- usado para ocultarlas por defecto en la
+   *  lista del inbox. */
+  has_customer_message?: boolean;
 }
 
 // ============================================================
