@@ -31,7 +31,7 @@ interface AudienceConfig {
   type: AudienceType;
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }[];
+  csvContacts?: { phone: string; name?: string; ficha?: string; buttonUrls?: string[]; extraFields?: Record<string, string> }[];
   excludeTagIds?: string[];
 }
 
@@ -280,17 +280,43 @@ export function Step2SelectAudience({
           onUpdate({ ...audience, csvContacts: [] });
           return;
         }
-        // Any column besides phone/name/ficha is treated as a per-contact
-        // custom field (e.g. "fecha", "tipo_cita") — captured here and
-        // later upserted into custom_fields + contact_custom_values so
-        // Step3 can map {{N}} to it like any other custom field.
+        // Columnas de botones de URL dinamica -- "url_boton" (un solo
+        // boton, index 0) o "url_boton_1"/"url_boton_2"/... (varios
+        // botones, 1-indexed en el CSV -> 0-indexed en buttonUrls).
+        // Pedido 2026-08-31: cada destinatario lleva su propio link
+        // personalizado por boton (ej. agendar ortodoncia vs integral),
+        // en vez de un link estatico compartido por toda la campaña.
+        const urlBotonKeys: { key: string; index: number }[] = [];
+        for (const k of firstRowKeys) {
+          const normalized = k.trim().toLowerCase();
+          if (normalized === 'url_boton') {
+            urlBotonKeys.push({ key: k, index: 0 });
+            continue;
+          }
+          const match = normalized.match(/^url_boton_(\d+)$/);
+          if (match) {
+            urlBotonKeys.push({ key: k, index: parseInt(match[1], 10) - 1 });
+          }
+        }
+        const urlBotonKeySet = new Set(urlBotonKeys.map((u) => u.key));
+        // Any column besides phone/name/ficha/url_boton* is treated as a
+        // per-contact custom field (e.g. "fecha", "tipo_cita") —
+        // captured here and later upserted into custom_fields +
+        // contact_custom_values so Step3 can map {{N}} to it like any
+        // other custom field.
         const extraKeys = firstRowKeys.filter(
-          (k) => k !== phoneKey && k !== nameKey && k !== fichaKey && k.trim() !== '',
+          (k) =>
+            k !== phoneKey &&
+            k !== nameKey &&
+            k !== fichaKey &&
+            !urlBotonKeySet.has(k) &&
+            k.trim() !== '',
         );
         const contacts: {
           phone: string;
           name?: string;
           ficha?: string;
+          buttonUrls?: string[];
           extraFields?: Record<string, string>;
         }[] = [];
         let invalid = 0;
@@ -304,6 +330,14 @@ export function Step2SelectAudience({
           }
           const name = nameKey ? row[nameKey]?.trim() : undefined;
           const ficha = fichaKey ? row[fichaKey]?.trim() : undefined;
+          let buttonUrls: string[] | undefined;
+          for (const { key, index } of urlBotonKeys) {
+            const v = row[key]?.trim();
+            if (v) {
+              buttonUrls = buttonUrls ?? [];
+              buttonUrls[index] = v;
+            }
+          }
           let extraFields: Record<string, string> | undefined;
           for (const k of extraKeys) {
             const v = row[k]?.trim();
@@ -312,7 +346,13 @@ export function Step2SelectAudience({
               extraFields[k.trim()] = v;
             }
           }
-          contacts.push({ phone, name: name || undefined, ficha: ficha || undefined, extraFields });
+          contacts.push({
+            phone,
+            name: name || undefined,
+            ficha: ficha || undefined,
+            buttonUrls,
+            extraFields,
+          });
         }
         if (invalid > 0) {
           toast.warning(`${invalid} fila(s) con teléfono inválido fueron omitidas.`);

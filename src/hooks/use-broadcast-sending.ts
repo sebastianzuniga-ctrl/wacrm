@@ -17,7 +17,7 @@ export interface AudienceConfig {
   type: 'all' | 'tags' | 'custom_field' | 'csv';
   tagIds?: string[];
   customField?: CustomFieldFilter;
-  csvContacts?: { phone: string; name?: string; ficha?: string; extraFields?: Record<string, string> }[];
+  csvContacts?: { phone: string; name?: string; ficha?: string; buttonUrls?: string[]; extraFields?: Record<string, string> }[];
   /** Contacts carrying any of these tags are subtracted from the result. */
   excludeTagIds?: string[];
 }
@@ -502,11 +502,21 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       // campaign was sent under, even if the contact's phone is shared
       // across family members with different fichas.
       const fichaByPhone = new Map<string, string>();
+      // Links de boton personalizados por destinatario (columnas
+      // url_boton / url_boton_1 / url_boton_2 / ... del CSV) -- pedido
+      // 2026-08-31: cada paciente lleva su propio link (ej. agendar
+      // ortodoncia vs integral), no un link estatico para toda la
+      // campana. Puede haber varios botones en la misma plantilla.
+      const buttonUrlsByPhone = new Map<string, string[]>();
       if (payload.audience.type === 'csv' && payload.audience.csvContacts) {
         for (const row of payload.audience.csvContacts) {
           if (row.ficha) {
             const digits = row.phone.replace(/\D/g, '');
             if (digits) fichaByPhone.set(digits, row.ficha);
+          }
+          if (row.buttonUrls && row.buttonUrls.length > 0) {
+            const digits = row.phone.replace(/\D/g, '');
+            if (digits) buttonUrlsByPhone.set(digits, row.buttonUrls);
           }
         }
       }
@@ -590,17 +600,34 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
         const apiRecipients = batch
           .filter((r) => r.contact?.phone)
-          .map((r) => ({
-            phone: r.contact!.phone as string,
-            params: r.contact
-              ? resolveVariables(
-                  payload.variables,
-                  r.contact,
-                  customValueIndex.get(r.contact.id),
+          .map((r) => {
+            const contactDigits = (r.contact!.phone as string).replace(/\D/g, '');
+            const buttonUrls =
+              buttonUrlsByPhone.get(contactDigits) ??
+              buttonUrlsByPhone.get(contactDigits.slice(-8));
+            const buttonParams = buttonUrls
+              ? Object.fromEntries(
+                  buttonUrls
+                    .map((url, i) => [i, url] as const)
+                    .filter(([, url]) => Boolean(url)),
                 )
-              : [],
-            ...(messageParams ? { messageParams } : {}),
-          }));
+              : undefined;
+            const recipientMessageParams =
+              messageParams || buttonParams
+                ? { ...messageParams, ...(buttonParams ? { buttonParams } : {}) }
+                : undefined;
+            return {
+              phone: r.contact!.phone as string,
+              params: r.contact
+                ? resolveVariables(
+                    payload.variables,
+                    r.contact,
+                    customValueIndex.get(r.contact.id),
+                  )
+                : [],
+              ...(recipientMessageParams ? { messageParams: recipientMessageParams } : {}),
+            };
+          });
 
         if (apiRecipients.length === 0) continue;
 
