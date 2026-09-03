@@ -6,6 +6,19 @@ import { Loader2, ShieldAlert, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PRESENCE_DOT_CLASS } from "@/components/presence/presence-dot"
+import { createClient } from "@/lib/supabase/client"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
+
+interface AuthActivityRow {
+  action: string
+  created_at: string
+}
 
 interface AgentRow {
   user_id: string
@@ -79,6 +92,33 @@ export default function HistorialPage() {
   const [agents, setAgents] = useState<AgentRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [activityUser, setActivityUser] = useState<AgentRow | null>(null)
+  const [activityRows, setActivityRows] = useState<AuthActivityRow[] | null>(null)
+  const [activityLoading, setActivityLoading] = useState(false)
+
+  async function openActivity(agent: AgentRow) {
+    setActivityUser(agent)
+    setActivityRows(null)
+    setActivityLoading(true)
+    try {
+      const supabase = createClient()
+      const { data, error } = await supabase.rpc("get_user_auth_activity", {
+        p_user_id: agent.user_id,
+        p_limit: 100,
+      })
+      if (error) {
+        console.error("[historial] get_user_auth_activity failed:", error)
+        setActivityRows([])
+        return
+      }
+      setActivityRows((data ?? []) as AuthActivityRow[])
+    } catch (err) {
+      console.error("[historial] get_user_auth_activity failed:", err)
+      setActivityRows([])
+    } finally {
+      setActivityLoading(false)
+    }
+  }
 
   const effectiveRange = useMemo(() => {
     if (preset === "custom") return { from: customFrom || null, to: customTo || null }
@@ -207,7 +247,11 @@ export default function HistorialPage() {
             </thead>
             <tbody>
               {agents.map((a) => (
-                <tr key={a.user_id} className="border-b border-border last:border-0">
+                <tr
+                  key={a.user_id}
+                  className="border-b border-border last:border-0 cursor-pointer hover:bg-muted/50"
+                  onClick={() => openActivity(a)}
+                >
                   <td className="p-3 text-foreground">
                     <div className="flex items-center gap-2">
                       <span
@@ -233,6 +277,55 @@ export default function HistorialPage() {
           </table>
         )}
       </div>
+      <Dialog
+        open={activityUser !== null}
+        onOpenChange={(open) => {
+          if (!open) setActivityUser(null)
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              {activityUser?.full_name}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Historial de inicio/cierre de sesion. Nota: cada refresco de
+              token genera un par login/logout, no representa solo aperturas
+              reales de la app.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-96 overflow-y-auto space-y-1">
+            {activityLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                <Loader2 className="size-4 animate-spin" />
+                Cargando...
+              </div>
+            ) : !activityRows || activityRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">Sin actividad registrada.</p>
+            ) : (
+              activityRows.map((row, i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between text-xs py-1.5 border-b border-border last:border-0"
+                >
+                  <span
+                    className={
+                      row.action === "login" ? "text-emerald-500 font-medium" : "text-muted-foreground"
+                    }
+                  >
+                    {row.action === "login" ? "Inicio de sesion" : "Cierre de sesion"}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {new Date(row.created_at).toLocaleString("es-CL", {
+                      timeZone: "America/Santiago",
+                    })}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
