@@ -28,6 +28,7 @@ import {
   Loader2,
   Mail,
   MailX,
+  Pencil,
   Plus,
   Trash2,
   UsersRound,
@@ -55,6 +56,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -181,6 +184,52 @@ export function MembersTab() {
   useEffect(() => {
     void loadEverything();
   }, [loadEverything]);
+
+  // Editar nombre/correo de un miembro -- pedido 2026-09-01, admin/owner
+  // puede corregir estos datos para cualquier miembro de la cuenta.
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  function openEditDialog(member: Member) {
+    setEditingMember(member);
+    setEditName(member.full_name || '');
+    setEditEmail(member.email || '');
+  }
+
+  async function handleSaveEdit() {
+    if (!editingMember) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/account/members/${editingMember.user_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: editName.trim(),
+          email: editEmail.trim(),
+        }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to update member');
+        return;
+      }
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.user_id === editingMember.user_id
+            ? { ...m, full_name: editName.trim(), email: editEmail.trim() || null }
+            : m,
+        ),
+      );
+      toast.success('Miembro actualizado.');
+      setEditingMember(null);
+    } catch {
+      toast.error('Failed to update member');
+    } finally {
+      setSavingEdit(false);
+    }
+  }
 
   async function handleRoleChange(member: Member, nextRole: AccountRole) {
     if (member.role === nextRole) return;
@@ -417,6 +466,21 @@ export function MembersTab() {
                       inline. Items align to the start on mobile so the
                       role dropdown lines up under the avatar. */}
                   <div className="flex items-center gap-2 sm:gap-3">
+                    {/* Editar nombre/correo -- admin+ solamente, cualquier
+                        fila incluyendo el owner (pedido 2026-09-01). */}
+                    {canManageMembers && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                        onClick={() => openEditDialog(member)}
+                        aria-label="Editar miembro"
+                        title="Editar miembro"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                     {/* Role display / editor. Inline Select is admin+
                         only AND not allowed on the owner row (owner
                         changes go through transfer, which lands later). */}
@@ -578,6 +642,68 @@ export function MembersTab() {
         onCreated={loadEverything}
       />
 
+      <Dialog
+        open={editingMember !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingMember(null);
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-popover-foreground">
+              Editar miembro
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              Actualiza el nombre y correo de {editingMember?.full_name || t('unnamed')}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-member-name" className="text-muted-foreground">
+                Nombre
+              </Label>
+              <Input
+                id="edit-member-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="bg-muted border-border text-foreground"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-member-email" className="text-muted-foreground">
+                Correo
+              </Label>
+              <Input
+                id="edit-member-email"
+                type="email"
+                value={editEmail}
+                onChange={(e) => setEditEmail(e.target.value)}
+                className="bg-muted border-border text-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                Cambiar el correo actualiza tambien las credenciales de inicio de sesion.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => setEditingMember(null)}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={savingEdit || !editName.trim() || !editEmail.trim()}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {savingEdit && <Loader2 className="size-4 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={removingMember !== null}
         onOpenChange={(open) => {
