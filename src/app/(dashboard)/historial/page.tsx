@@ -14,10 +14,58 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts"
 
 interface AuthActivityRow {
   action: string
   created_at: string
+}
+
+// Cada refresco de token JWT genera un par login/logout casi
+// simultaneo -- ruidoso para un humano. Colapsa eventos consecutivos
+// separados por menos de 60s en uno solo (se queda con el primer
+// login de cada racha), para que el log muestre sesiones reales, no
+// cada refresco silencioso. Pedido 2026-09-03.
+const SESSION_MERGE_GAP_MS = 60_000
+
+function dedupeActivity(rows: AuthActivityRow[]): AuthActivityRow[] {
+  // rows viene ordenado DESC (mas reciente primero) desde la RPC.
+  const result: AuthActivityRow[] = []
+  for (const row of rows) {
+    const prev = result[result.length - 1]
+    if (prev) {
+      const gap = Math.abs(
+        new Date(prev.created_at).getTime() - new Date(row.created_at).getTime()
+      )
+      if (gap < SESSION_MERGE_GAP_MS) continue
+    }
+    result.push(row)
+  }
+  return result
+}
+
+// Agrupa logins (ya deduplicados) por dia, para el grafico de barras.
+// range: cuantos dias hacia atras mostrar (7/30/90 ~ semana/mes/trimestre).
+function buildDailyActivity(
+  rows: AuthActivityRow[],
+  rangeDays: number
+): { date: string; count: number }[] {
+  const cutoff = Date.now() - rangeDays * 24 * 60 * 60 * 1000
+  const counts = new Map<string, number>()
+  for (const row of rows) {
+    if (row.action !== "login") continue
+    const t = new Date(row.created_at).getTime()
+    if (t < cutoff) continue
+    const day = new Date(row.created_at).toLocaleDateString("es-CL", {
+      timeZone: "America/Santiago",
+      day: "2-digit",
+      month: "2-digit",
+    })
+    counts.set(day, (counts.get(day) ?? 0) + 1)
+  }
+  return Array.from(counts.entries())
+    .map(([date, count]) => ({ date, count }))
+    .reverse()
 }
 
 interface AgentRow {
@@ -95,6 +143,12 @@ export default function HistorialPage() {
   const [activityUser, setActivityUser] = useState<AgentRow | null>(null)
   const [activityRows, setActivityRows] = useState<AuthActivityRow[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(false)
+  const [activityRange, setActivityRange] = useState<7 | 30 | 90>(7)
+
+  const dailyActivity = useMemo(() => {
+    if (!activityRows) return []
+    return buildDailyActivity(activityRows, activityRange)
+  }, [activityRows, activityRange])
 
   async function openActivity(agent: AgentRow) {
     setActivityUser(agent)
@@ -111,7 +165,7 @@ export default function HistorialPage() {
         setActivityRows([])
         return
       }
-      setActivityRows((data ?? []) as AuthActivityRow[])
+      setActivityRows(dedupeActivity((data ?? []) as AuthActivityRow[]))
     } catch (err) {
       console.error("[historial] get_user_auth_activity failed:", err)
       setActivityRows([])
@@ -294,7 +348,52 @@ export default function HistorialPage() {
               reales de la app.
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-96 overflow-y-auto space-y-1">
+          {!activityLoading && activityRows && activityRows.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex gap-1">
+                {([7, 30, 90] as const).map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setActivityRange(r)}
+                    className={`rounded-md px-2 py-1 text-xs ${
+                      activityRange === r
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {r === 7 ? "Semana" : r === 30 ? "Mes" : "Trimestre"}
+                  </button>
+                ))}
+              </div>
+              <div className="h-32 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dailyActivity}>
+                    <XAxis
+                      dataKey="date"
+                      tick={{ fontSize: 10 }}
+                      stroke="var(--muted-foreground)"
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 10 }}
+                      stroke="var(--muted-foreground)"
+                      width={24}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "var(--popover)",
+                        borderColor: "var(--border)",
+                        fontSize: 12,
+                      }}
+                    />
+                    <Bar dataKey="count" fill="var(--primary)" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          <div className="max-h-72 overflow-y-auto space-y-1">
             {activityLoading ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
                 <Loader2 className="size-4 animate-spin" />
