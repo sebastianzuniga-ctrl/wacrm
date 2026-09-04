@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { renderTemplateBody } from '@/lib/whatsapp/render-template-body';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
@@ -329,6 +330,7 @@ export function ContactDetailView({
     values: TemplateSendValues,
   ) {
     if (!contactId) return;
+    const contentText = renderTemplateBody(template.body_text, values.body);
     setSendingTemplate(true);
     try {
       const res = await fetch('/api/whatsapp/send', {
@@ -347,6 +349,7 @@ export function ContactDetailView({
             buttonParams: values.buttonParams,
           },
           template_params: values.body,
+          content_text: contentText,
         }),
       });
 
