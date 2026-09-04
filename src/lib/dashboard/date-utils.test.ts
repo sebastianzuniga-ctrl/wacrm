@@ -106,17 +106,25 @@ describe("lastNDayKeys", () => {
 
 describe("mondayIndex", () => {
   it("maps Monday → 0 and Sunday → 6", () => {
-    expect(mondayIndex(new Date("2026-05-18"))).toBe(0); // Mon
-    expect(mondayIndex(new Date("2026-05-19"))).toBe(1); // Tue
-    expect(mondayIndex(new Date("2026-05-23"))).toBe(5); // Sat
-    expect(mondayIndex(new Date("2026-05-24"))).toBe(6); // Sun
+    // Local-time constructor (year, monthIndex, day) on purpose --
+    // an ISO date-only string ("2026-05-18") parses as UTC midnight,
+    // which .getDay() then reads back in the RUNNER's local timezone.
+    // On a server west of UTC (e.g. Chile, UTC-4) that shifts the
+    // calendar day backward by one, flipping Monday into Sunday and
+    // breaking this assertion depending on where the test runs.
+    // new Date(y, m, d) has no such UTC round-trip, so it is the same
+    // calendar day regardless of the runner's timezone.
+    expect(mondayIndex(new Date(2026, 4, 18))).toBe(0); // Mon
+    expect(mondayIndex(new Date(2026, 4, 19))).toBe(1); // Tue
+    expect(mondayIndex(new Date(2026, 4, 23))).toBe(5); // Sat
+    expect(mondayIndex(new Date(2026, 4, 24))).toBe(6); // Sun
   });
 
   it("aligns with DOW_SHORT_MON_FIRST labels", () => {
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-18"))]).toBe(
+    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date(2026, 4, 18))]).toBe(
       "Mon",
     );
-    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date("2026-05-24"))]).toBe(
+    expect(DOW_SHORT_MON_FIRST[mondayIndex(new Date(2026, 4, 24))]).toBe(
       "Sun",
     );
   });
