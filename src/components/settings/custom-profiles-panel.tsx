@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   Card,
   CardContent,
@@ -39,7 +40,7 @@ interface CustomProfile {
   name: string;
   base_role: "admin" | "agent";
   allowed_pages: string[];
-  allowed_template_ids: string[];
+  allowed_template_ids: string[] | null;
   created_at: string;
 }
 
@@ -64,6 +65,10 @@ export function CustomProfilesPanel() {
   const [formBaseRole, setFormBaseRole] = useState<"admin" | "agent">("agent");
   const [formPages, setFormPages] = useState<Set<string>>(new Set());
   const [formTemplateIds, setFormTemplateIds] = useState<Set<string>>(new Set());
+  // Por defecto (false) el perfil ve TODAS las plantillas de la cuenta
+  // (allowed_template_ids = NULL). Solo al activarlo se guarda la
+  // whitelist explícita del checklist de abajo.
+  const [formRestrictTemplates, setFormRestrictTemplates] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<CustomProfile | null>(null);
@@ -108,6 +113,7 @@ export function CustomProfilesPanel() {
     setFormBaseRole("agent");
     setFormPages(new Set());
     setFormTemplateIds(new Set());
+    setFormRestrictTemplates(false);
     setEditing("new");
   }
 
@@ -116,6 +122,7 @@ export function CustomProfilesPanel() {
     setFormBaseRole(profile.base_role);
     setFormPages(new Set(profile.allowed_pages));
     setFormTemplateIds(new Set(profile.allowed_template_ids ?? []));
+    setFormRestrictTemplates(profile.allowed_template_ids !== null);
     setEditing(profile);
   }
 
@@ -157,7 +164,9 @@ export function CustomProfilesPanel() {
           name,
           base_role: formBaseRole,
           allowed_pages: Array.from(formPages),
-          allowed_template_ids: Array.from(formTemplateIds),
+          allowed_template_ids: formRestrictTemplates
+            ? Array.from(formTemplateIds)
+            : null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -255,7 +264,9 @@ export function CustomProfilesPanel() {
                       {" · "}
                       {t("pagesCount", { count: profile.allowed_pages.length })}
                       {" · "}
-                      {t("templatesCount", { count: (profile.allowed_template_ids ?? []).length })}
+                      {profile.allowed_template_ids === null
+                        ? t("templatesCountAll")
+                        : t("templatesCount", { count: profile.allowed_template_ids.length })}
                     </p>
                   </div>
                   {canEditSettings && (
@@ -374,24 +385,38 @@ export function CustomProfilesPanel() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>{t("templatesLabel")}</Label>
-              {templates.length === 0 ? (
-                <p className="text-xs text-muted-foreground">{t("noTemplatesAvailable")}</p>
-              ) : (
-                <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-3">
-                  {templates.map((tpl) => (
-                    <label key={tpl.id} className="flex items-center gap-2 text-sm">
-                      <Checkbox
-                        checked={formTemplateIds.has(tpl.id)}
-                        onCheckedChange={() => toggleTemplate(tpl.id)}
-                      />
-                      <span className="truncate">{tpl.name}</span>
-                      <span className="text-[10px] text-muted-foreground">{tpl.category}</span>
-                    </label>
-                  ))}
-                </div>
+              <div className="flex items-center justify-between">
+                <Label>{t("templatesLabel")}</Label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch
+                    checked={formRestrictTemplates}
+                    onCheckedChange={setFormRestrictTemplates}
+                  />
+                  {t("templatesRestrictToggle")}
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">{t("templatesRestrictHint")}</p>
+              {formRestrictTemplates && (
+                templates.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{t("noTemplatesAvailable")}</p>
+                ) : (
+                  <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-border p-3">
+                    {templates.map((tpl) => (
+                      <label key={tpl.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={formTemplateIds.has(tpl.id)}
+                          onCheckedChange={() => toggleTemplate(tpl.id)}
+                        />
+                        <span className="truncate">{tpl.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{tpl.category}</span>
+                      </label>
+                    ))}
+                  </div>
+                )
               )}
-              <p className="text-xs text-muted-foreground">{t("templatesHint")}</p>
+              {formRestrictTemplates && (
+                <p className="text-xs text-muted-foreground">{t("templatesHint")}</p>
+              )}
             </div>
           </div>
           <DialogFooter>

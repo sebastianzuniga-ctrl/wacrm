@@ -51,9 +51,13 @@ export async function POST(request: Request) {
       ? body.allowed_pages.filter((p: unknown) => typeof p === 'string')
       : [];
 
-    const allowedTemplateIds = Array.isArray(body.allowed_template_ids)
-      ? body.allowed_template_ids.filter((t: unknown) => typeof t === 'string')
-      : [];
+    // null = sin restricción (default para perfiles nuevos si el
+    // caller no manda nada explícito distinto); array = whitelist.
+    const allowedTemplateIds = body.allowed_template_ids === null
+      ? null
+      : Array.isArray(body.allowed_template_ids)
+        ? body.allowed_template_ids.filter((t: unknown) => typeof t === 'string')
+        : null;
 
     const { data, error } = await ctx.supabase
       .from('custom_profiles')

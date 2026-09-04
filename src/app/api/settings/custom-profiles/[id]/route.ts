@@ -50,8 +50,14 @@ export async function PATCH(
       update.allowed_pages = body.allowed_pages.filter((p: unknown) => typeof p === 'string');
     }
     if (body.allowed_template_ids !== undefined) {
-      if (!Array.isArray(body.allowed_template_ids)) return bad('allowed_template_ids debe ser un array');
-      update.allowed_template_ids = body.allowed_template_ids.filter((t: unknown) => typeof t === 'string');
+      // null = sin restricción (ve todas las plantillas de la cuenta).
+      // Array = whitelist explícita (incluyendo [] = ninguna, a propósito).
+      if (body.allowed_template_ids !== null && !Array.isArray(body.allowed_template_ids)) {
+        return bad('allowed_template_ids debe ser un array o null');
+      }
+      update.allowed_template_ids = body.allowed_template_ids === null
+        ? null
+        : body.allowed_template_ids.filter((t: unknown) => typeof t === 'string');
     }
 
     if (Object.keys(update).length === 0) return bad('Nada que actualizar');
