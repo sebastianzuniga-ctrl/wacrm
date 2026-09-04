@@ -243,13 +243,27 @@ async function findOrCreateConversation(
   userId: string,
   contactId: string,
 ): Promise<string | null> {
-  const { data: existing } = await supabase
+  // Debe filtrar por status igual que el indice unico parcial
+  // idx_conversations_account_contact_active (account_id, contact_id
+  // WHERE status <> 'closed') -- si no, un contacto con historial de
+  // conversaciones CERRADAS ademas de la abierta actual hace que este
+  // SELECT matchee varias filas. maybeSingle() con >1 fila devuelve un
+  // error que quedaba silenciado (solo se desestructuraba `data`), asi
+  // que `existing` caia en null y el codigo intentaba un INSERT que
+  // chocaba contra ese mismo indice (violacion de unicidad real,
+  // "Failed to open a conversation for this contact" en la UI).
+  const { data: existing, error: findError } = await supabase
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .neq('status', 'closed')
     .maybeSingle()
 
+  if (findError) {
+    console.error('Error looking up existing conversation for contact send:', findError.message)
+    return null
+  }
   if (existing) return existing.id
 
   const { data: created, error } = await supabase
@@ -266,6 +280,5 @@ async function findOrCreateConversation(
     console.error('Error creating conversation for contact send:', error.message)
     return null
   }
-
   return created.id
 }
